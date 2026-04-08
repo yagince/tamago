@@ -1,3 +1,11 @@
+use clap::ValueEnum;
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum Shell {
+    Zsh,
+    Bash,
+}
+
 const ZSH_HOOK: &str = r#"# tamago - terminal pet
 _tamago_preexec() { command tamago tick --cmd "$1" &!; }
 autoload -Uz add-zsh-hook
@@ -9,14 +17,10 @@ _tamago_preexec() { command tamago tick --cmd "$1" & disown; }
 trap '_tamago_preexec "$BASH_COMMAND"' DEBUG
 "#;
 
-pub fn run(zsh: bool, bash: bool) {
-    match (zsh, bash) {
-        (true, _) => print!("{ZSH_HOOK}"),
-        (_, true) => print!("{BASH_HOOK}"),
-        _ => {
-            eprintln!("シェルを指定してください: --zsh または --bash");
-            std::process::exit(1);
-        }
+pub fn run(shell: &Shell) {
+    match shell {
+        Shell::Zsh => print!("{ZSH_HOOK}"),
+        Shell::Bash => print!("{BASH_HOOK}"),
     }
 }
 

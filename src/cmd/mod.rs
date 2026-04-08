@@ -19,10 +19,8 @@ pub enum Command {
     Init,
     /// フックスクリプトを stdout に出力
     Hook {
-        #[arg(long)]
-        zsh: bool,
-        #[arg(long)]
-        bash: bool,
+        /// 対象シェル
+        shell: hook::Shell,
     },
     /// フックから呼ばれる（内部用）
     #[command(hide = true)]
@@ -40,7 +38,7 @@ pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show(),
         Some(Command::Init) => init::run(&storage),
-        Some(Command::Hook { zsh, bash }) => hook::run(zsh, bash),
+        Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Tick { cmd, claude_turn }) => {
             tick::run(&storage, cmd.as_deref(), claude_turn)
         }
