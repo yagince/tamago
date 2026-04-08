@@ -22,7 +22,10 @@ pub enum Command {
     /// 命名・改名
     Name {
         /// ペットの名前
-        name: String,
+        name: Option<String>,
+        /// Claude に名前を考えさせる
+        #[arg(long)]
+        ai: bool,
     },
     /// データをリセットして初期化しなおす
     Reset,
@@ -47,7 +50,7 @@ pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show(),
         Some(Command::Init) => init::run(&storage),
-        Some(Command::Name { name: n }) => name::run(&storage, &n),
+        Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai),
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Tick { cmd, claude_turn }) => {
