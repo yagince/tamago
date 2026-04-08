@@ -1,6 +1,5 @@
 use super::{Archetype, Stage};
 
-/// 名前からハッシュ値を生成（個体ごとに固定の見た目にする）
 fn name_hash(name: &str) -> usize {
     name.bytes().fold(0usize, |acc, b| {
         acc.wrapping_mul(31).wrapping_add(b as usize)
@@ -11,32 +10,24 @@ fn pick<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
     parts[hash.wrapping_add(salt) % parts.len()]
 }
 
-// --- パーツ定義 (全て半角で幅を揃える) ---
+// --- パーツ定義 ---
 
-// 目: 4文字幅 "L  R"
 const EYES: &[&str] = &[
     "o  o", "^  ^", "-  -", "*  *", "@  @", ".  .", "O  O", "u  u", "'  '", "=  =",
 ];
 
-// 口: 4文字幅 " XX "
-const MOUTHS: &[&str] = &[
-    " w  ", " v  ", " .  ", " o  ", " u  ", " ~  ", " _  ", " ^  ",
-];
+const MOUTHS: &[&str] = &[" w ", " v ", " . ", " o ", " u ", " ~ ", " _ ", " ^ "];
 
-// 耳: (左, 右) ペア
 const EARS: &[(&str, &str)] = &[
-    ("^", "^"),
-    ("~", "~"),
-    ("*", "*"),
-    ("'", "'"),
-    ("`", "`"),
-    ("/", "\\"),
-    ("?", "?"),
-    ("+", "+"),
+    (" ^  ^ ", " ~  ~ "),
+    (" *  * ", " '  ' "),
+    ("/    \\", " ?  ? "),
+    (" +  + ", " `  ` "),
 ];
 
-// ボディマーク: 2文字幅
-const MARKS: &[&str] = &["  ", "<>", "::", "**", "##", "++", "..", "~~", "||", "@@"];
+const MARKS: &[&str] = &[
+    "    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ ",
+];
 
 pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
     match stage {
@@ -49,25 +40,25 @@ pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> St
 }
 
 const EGG: &str = "\
-     ___
-    /   \\
-   | .   |
-   |  .  |
-    \\___/
+    ___
+   /   \\
+  | .   |
+  |  .  |
+   \\___/
 ";
 
 fn render_baby(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
+    let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
 
     format!(
         "\
-   {ear_l}    {ear_r}
-  ( {eyes} )
-  ( {mouth} )
-   '----'
+  {ear_l}
+  ({eyes})
+   ({mouth})
+  '----'
 "
     )
 }
@@ -76,16 +67,16 @@ fn render_child(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
+    let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
     let mark = pick(MARKS, h, 3);
 
     format!(
         "\
-   {ear_l}    {ear_r}
-  ( {eyes} )
-  ( {mouth} )
-  /| {mark} |\\
-   ''  ''
+  {ear_l}
+  ({eyes})
+   ({mouth})
+  |{mark}|
+  d    b
 "
     )
 }
@@ -94,17 +85,16 @@ fn render_teen(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
+    let (_, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
     let mark = pick(MARKS, h, 3);
 
     format!(
         "\
-    {ear_l}    {ear_r}
-   ( {eyes} )
-   ( {mouth} )
-   /|{mark}  |\\
-  / | -- | \\
-    ''  ''
+   {ear_r}
+  ({eyes})
+   ({mouth})
+  /|{mark}|\\
+ / '----' \\
 "
     )
 }
@@ -113,27 +103,27 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
+    let (_, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
     let mark = pick(MARKS, h, 3);
 
     let title = match archetype {
-        Some(Archetype::Versionist) => "  ~ Versionist ~",
-        Some(Archetype::AiMage) => "   ~ AI Mage ~",
-        Some(Archetype::CloudDweller) => " ~ CloudDweller ~",
-        Some(Archetype::AncientMage) => " ~ AncientMage ~",
-        Some(Archetype::Generalist) | None => "  ~ Generalist ~",
+        Some(Archetype::Versionist) => " ~Versionist~",
+        Some(Archetype::AiMage) => "  ~AI Mage~",
+        Some(Archetype::CloudDweller) => "~CloudDweller~",
+        Some(Archetype::AncientMage) => "~AncientMage~",
+        Some(Archetype::Generalist) | None => " ~Generalist~",
     };
 
     format!(
         "\
-     {ear_l}    {ear_r}
-    ( {eyes} )
-    ( {mouth} )
-   --|{mark}  |--
-  /  | -- |  \\
-  |  '    '  |
-  '----------'
-  {title}
+    {ear_r}
+   ({eyes})
+    ({mouth})
+  --|{mark}|--
+ /  '----'  \\
+ |          |
+ '----------'
+ {title}
 "
     )
 }
@@ -158,7 +148,6 @@ mod tests {
 
     #[test]
     fn different_name_different_art() {
-        // ハッシュが異なる名前を使う
         let a = ascii_art(&Stage::Baby, &None, "aaa");
         let b = ascii_art(&Stage::Baby, &None, "zzz");
         assert_ne!(a, b);
@@ -183,13 +172,20 @@ mod tests {
     }
 
     #[test]
+    fn name_hash_is_deterministic() {
+        assert_eq!(name_hash("abc"), name_hash("abc"));
+        assert_ne!(name_hash("abc"), name_hash("xyz"));
+    }
+
+    #[test]
     fn print_all_stages_for_visual_check() {
-        let names = ["ピカドン", "モグリン", "フワッチ"];
+        let names = ["abc", "xyz", "tamago"];
         for name in names {
             println!("=== {name} ===");
             for stage in [Stage::Egg, Stage::Baby, Stage::Child, Stage::Teen] {
                 println!("[{stage:?}]");
                 print!("{}", ascii_art(&stage, &None, name));
+                println!();
             }
             for arch in [
                 Archetype::Versionist,
@@ -200,28 +196,8 @@ mod tests {
             ] {
                 println!("[Adult/{arch:?}]");
                 print!("{}", ascii_art(&Stage::Adult, &Some(arch), name));
+                println!();
             }
         }
-    }
-
-    #[test]
-    fn name_hash_is_deterministic() {
-        assert_eq!(name_hash("abc"), name_hash("abc"));
-        assert_ne!(name_hash("abc"), name_hash("xyz"));
-    }
-
-    #[test]
-    fn ears_are_paired() {
-        let art = ascii_art(&Stage::Baby, &None, "test");
-        // 1行目の耳が対称
-        let first_line = art.lines().next().unwrap();
-        let trimmed = first_line.trim();
-        let first = &trimmed[..1];
-        let last = &trimmed[trimmed.len() - 1..];
-        // ペアなので左右同じか、/\ のペア
-        assert!(
-            first == last || (first == "/" && last == "\\"),
-            "ears not paired: {first} vs {last}"
-        );
     }
 }

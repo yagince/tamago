@@ -38,6 +38,7 @@ impl Default for Storage {
 }
 
 impl Storage {
+    #[cfg(test)]
     pub fn new(base_dir: impl Into<PathBuf>) -> Self {
         Self {
             base_dir: base_dir.into(),
