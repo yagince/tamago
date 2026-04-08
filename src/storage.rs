@@ -25,8 +25,13 @@ pub struct Storage {
 
 impl Default for Storage {
     fn default() -> Self {
-        let base_dir = dirs::config_dir()
-            .expect("config directory not found")
+        let base_dir = std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .expect("home directory not found")
+                    .join(".config")
+            })
             .join("tamago");
         Self { base_dir }
     }
