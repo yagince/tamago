@@ -1,5 +1,6 @@
 mod hook;
 pub(crate) mod init;
+mod name;
 mod reset;
 mod tick;
 
@@ -18,6 +19,11 @@ pub struct Cli {
 pub enum Command {
     /// 初期セットアップ（卵生成 + ガイド表示）
     Init,
+    /// 命名・改名
+    Name {
+        /// ペットの名前
+        name: String,
+    },
     /// データをリセットして初期化しなおす
     Reset,
     /// フックスクリプトを stdout に出力
@@ -41,6 +47,7 @@ pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show(),
         Some(Command::Init) => init::run(&storage),
+        Some(Command::Name { name: n }) => name::run(&storage, &n),
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Tick { cmd, claude_turn }) => {

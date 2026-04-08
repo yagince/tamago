@@ -1,9 +1,8 @@
 use chrono::Utc;
 
+use crate::pet::names::random_name;
 use crate::pet::PetState;
 use crate::storage::Storage;
-
-const DEFAULT_NAME: &str = "たまご";
 
 pub fn run(storage: &Storage) {
     if storage.pet_exists() {
@@ -15,16 +14,17 @@ pub fn run(storage: &Storage) {
         .ensure_dir()
         .expect("ディレクトリの作成に失敗しました");
 
-    let pet = PetState::new(DEFAULT_NAME, Utc::now());
+    let name = random_name();
+    let pet = PetState::new(&name, Utc::now());
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
-    print_guide(storage);
+    print_guide(storage, &name);
 }
 
-fn print_guide(storage: &Storage) {
-    println!("🥚 たまごが生まれました！");
+fn print_guide(storage: &Storage, name: &str) {
+    println!("🥚 {name} が生まれました！");
     println!("📁 {}", storage.base_dir().display());
     println!();
     println!("次にフックを設定してください:");
@@ -54,7 +54,7 @@ mod tests {
 
         assert!(storage.pet_exists());
         let pet = storage.load_pet().unwrap();
-        assert_eq!(pet.name, DEFAULT_NAME);
+        assert!(!pet.name.is_empty());
         assert_eq!(pet.stage, crate::pet::Stage::Egg);
         assert_eq!(pet.hunger, 100);
         assert_eq!(pet.mood, 100);
