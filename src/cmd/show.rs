@@ -11,13 +11,39 @@ pub fn run(storage: &Storage) {
         .read_and_clear_activities()
         .expect("activity の読み込みに失敗しました");
 
+    let old_stage = pet.stage.clone();
     pet.apply_activities(&activities);
+
+    // 進化判定（複数段一気に上がる場合もループ）
+    while pet.try_evolve() {}
 
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
+    if pet.stage != old_stage {
+        print_evolution(&pet);
+    }
     print_status(&pet);
+}
+
+fn print_evolution(pet: &crate::pet::PetState) {
+    use crate::pet::Stage;
+    let msg = match &pet.stage {
+        Stage::Egg => unreachable!(),
+        Stage::Baby => "🎉 たまごが孵化した！",
+        Stage::Child => "🎉 すくすく成長している！",
+        Stage::Teen => "🎉 大きくなってきた！",
+        Stage::Adult => "🎉🎉🎉 最終進化した！",
+    };
+    println!();
+    println!("  ✨✨✨✨✨✨✨✨✨✨");
+    println!("  {msg}");
+    if let Some(ref archetype) = pet.archetype {
+        println!("  タイプ: {archetype:?}");
+    }
+    println!("  ✨✨✨✨✨✨✨✨✨✨");
+    println!();
 }
 
 fn print_status(pet: &crate::pet::PetState) {
@@ -93,6 +119,28 @@ mod tests {
         run(&storage);
         let pet_after_second = storage.load_pet().unwrap();
         assert_eq!(pet_after_second.exp, 1);
+    }
+
+    #[test]
+    fn show_evolves_pet_when_threshold_reached() {
+        let (_dir, storage) = setup_with_pet();
+
+        // Egg→Baby に必要な 5000 exp 分の activity
+        for _ in 0..250 {
+            let record = ActivityRecord {
+                cmd: "git commit".into(),
+                cat: Category::Git,
+                exp: 20,
+                ts: Utc::now(),
+            };
+            storage.append_activity(&record).unwrap();
+        }
+
+        run(&storage);
+
+        let pet = storage.load_pet().unwrap();
+        assert_eq!(pet.stage, Stage::Baby);
+        assert_eq!(pet.exp, 5000);
     }
 
     #[test]

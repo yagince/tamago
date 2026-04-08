@@ -103,10 +103,7 @@ impl Storage {
             return Ok(vec![]);
         }
 
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)?;
+        let file = OpenOptions::new().read(true).write(true).open(&path)?;
         let locked = Flock::lock(file, FlockArg::LockExclusive)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.1))?;
 

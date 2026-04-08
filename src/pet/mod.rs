@@ -104,6 +104,52 @@ impl PetState {
         self.stage.emoji(&self.archetype)
     }
 
+    /// 進化判定。進化したら true を返す。
+    pub fn try_evolve(&mut self) -> bool {
+        let next = match self.stage {
+            Stage::Egg => Stage::Baby,
+            Stage::Baby => Stage::Child,
+            Stage::Child => Stage::Teen,
+            Stage::Teen => Stage::Adult,
+            Stage::Adult => return false,
+        };
+
+        if self.exp < next.exp_threshold() {
+            return false;
+        }
+
+        // Teen → Adult は archetype を決定
+        if self.stage == Stage::Teen {
+            self.archetype = Some(self.determine_archetype());
+        }
+
+        self.stage = next;
+        true
+    }
+
+    fn determine_archetype(&self) -> Archetype {
+        let total: u64 = self.category_exp.values().sum();
+        if total == 0 {
+            return Archetype::Generalist;
+        }
+
+        let ratio = |cat: &Category| -> f64 {
+            *self.category_exp.get(cat).unwrap_or(&0) as f64 / total as f64
+        };
+
+        if ratio(&Category::Git) >= 0.35 {
+            Archetype::Versionist
+        } else if ratio(&Category::Ai) >= 0.35 {
+            Archetype::AiMage
+        } else if ratio(&Category::Infra) >= 0.35 {
+            Archetype::CloudDweller
+        } else if ratio(&Category::Editor) >= 0.35 {
+            Archetype::AncientMage
+        } else {
+            Archetype::Generalist
+        }
+    }
+
     /// 未集計の activity を反映する
     pub fn apply_activities(&mut self, activities: &[crate::storage::ActivityRecord]) {
         for record in activities {
@@ -219,6 +265,87 @@ mod tests {
         // exp が閾値を超えてもクラッシュしない
         pet.exp = 999_999;
         assert!(pet.level() >= 1);
+    }
+
+    #[test]
+    fn evolve_egg_to_baby() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.exp = 5_000;
+
+        let evolved = pet.try_evolve();
+        assert!(evolved);
+        assert_eq!(pet.stage, Stage::Baby);
+    }
+
+    #[test]
+    fn no_evolve_below_threshold() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.exp = 4_999;
+
+        let evolved = pet.try_evolve();
+        assert!(!evolved);
+        assert_eq!(pet.stage, Stage::Egg);
+    }
+
+    #[test]
+    fn evolve_through_multiple_stages() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.exp = 50_000;
+
+        // 1段ずつ進化
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Baby);
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Child);
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Teen);
+        // Teen→Adult は 150_000 必要
+        assert!(!pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Teen);
+    }
+
+    #[test]
+    fn evolve_teen_to_adult_git_archetype() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.stage = Stage::Teen;
+        pet.exp = 150_000;
+        *pet.category_exp.get_mut(&Category::Git).unwrap() = 100_000;
+
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Adult);
+        assert_eq!(pet.archetype, Some(Archetype::Versionist));
+    }
+
+    #[test]
+    fn evolve_teen_to_adult_generalist() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.stage = Stage::Teen;
+        pet.exp = 150_000;
+        // 均等に分布 → 特化なし
+        *pet.category_exp.get_mut(&Category::Git).unwrap() = 30_000;
+        *pet.category_exp.get_mut(&Category::Dev).unwrap() = 30_000;
+        *pet.category_exp.get_mut(&Category::Ai).unwrap() = 30_000;
+        *pet.category_exp.get_mut(&Category::Infra).unwrap() = 30_000;
+        *pet.category_exp.get_mut(&Category::Editor).unwrap() = 30_000;
+
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Adult);
+        assert_eq!(pet.archetype, Some(Archetype::Generalist));
+    }
+
+    #[test]
+    fn adult_does_not_evolve_further() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.stage = Stage::Adult;
+        pet.exp = 999_999;
+
+        assert!(!pet.try_evolve());
     }
 
     #[test]
