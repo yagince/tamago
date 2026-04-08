@@ -7,12 +7,11 @@ pub fn run(storage: &Storage) {
         .load_pet()
         .expect("ペットが見つかりません。tamago init を実行してください。");
 
-    let (activities, new_cursor) = storage
-        .read_pending_activities(pet.activity_cursor)
+    let activities = storage
+        .read_and_clear_activities()
         .expect("activity の読み込みに失敗しました");
 
     pet.apply_activities(&activities);
-    pet.activity_cursor = new_cursor;
 
     storage
         .save_pet(&pet)
@@ -72,7 +71,7 @@ mod tests {
     }
 
     #[test]
-    fn show_advances_cursor() {
+    fn show_clears_activities_after_apply() {
         let (_dir, storage) = setup_with_pet();
 
         let record = ActivityRecord {
@@ -87,7 +86,7 @@ mod tests {
         let pet_after_first = storage.load_pet().unwrap();
         assert_eq!(pet_after_first.exp, 1);
 
-        // 2回目は集計済みなので exp が増えない
+        // 2回目はクリア済みなので exp が増えない
         run(&storage);
         let pet_after_second = storage.load_pet().unwrap();
         assert_eq!(pet_after_second.exp, 1);

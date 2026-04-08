@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions};
-use std::io::{self, BufRead, Seek, Write};
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -95,18 +95,23 @@ impl Storage {
         Ok(())
     }
 
-    /// activity_cursor 以降の未集計レコードを読み、新しい cursor 位置を返す
-    pub fn read_pending_activities(&self, cursor: u64) -> io::Result<(Vec<ActivityRecord>, u64)> {
+    /// activity.jsonl を全て読み込み、ファイルを空にする。
+    /// activity.jsonl を flock してから読み→truncate するため、tick との競合を防ぐ。
+    pub fn read_and_clear_activities(&self) -> io::Result<Vec<ActivityRecord>> {
         let path = self.activity_file();
         if !path.exists() {
-            return Ok((vec![], cursor));
+            return Ok(vec![]);
         }
 
-        let mut file = fs::File::open(&path)?;
-        file.seek(io::SeekFrom::Start(cursor))?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)?;
+        let locked = Flock::lock(file, FlockArg::LockExclusive)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.1))?;
 
         let mut records = Vec::new();
-        let reader = io::BufReader::new(&file);
+        let reader = io::BufReader::new(&*locked);
         for line in reader.lines() {
             let line = line?;
             if line.is_empty() {
@@ -117,8 +122,10 @@ impl Storage {
             }
         }
 
-        let new_cursor = file.stream_position()?;
-        Ok((records, new_cursor))
+        // truncate で中身を空にする
+        locked.set_len(0)?;
+
+        Ok(records)
     }
 
     fn lock_file(&self) -> PathBuf {
@@ -215,6 +222,57 @@ mod tests {
         let content = fs::read_to_string(storage.activity_file()).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn read_and_clear_returns_all_records() {
+        let (_dir, storage) = setup();
+        storage.ensure_dir().unwrap();
+
+        for i in 0..3 {
+            let record = ActivityRecord {
+                cmd: format!("cmd{i}"),
+                cat: Category::Basic,
+                exp: 1,
+                ts: Utc::now(),
+            };
+            storage.append_activity(&record).unwrap();
+        }
+
+        let records = storage.read_and_clear_activities().unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].cmd, "cmd0");
+        assert_eq!(records[2].cmd, "cmd2");
+    }
+
+    #[test]
+    fn read_and_clear_empties_file() {
+        let (_dir, storage) = setup();
+        storage.ensure_dir().unwrap();
+
+        let record = ActivityRecord {
+            cmd: "test".into(),
+            cat: Category::Basic,
+            exp: 1,
+            ts: Utc::now(),
+        };
+        storage.append_activity(&record).unwrap();
+        storage.read_and_clear_activities().unwrap();
+
+        // ファイルは空になっている
+        let content = fs::read_to_string(storage.activity_file()).unwrap();
+        assert!(content.is_empty());
+
+        // 2回目は空
+        let records = storage.read_and_clear_activities().unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn read_and_clear_no_file() {
+        let (_dir, storage) = setup();
+        let records = storage.read_and_clear_activities().unwrap();
+        assert!(records.is_empty());
     }
 
     #[test]
