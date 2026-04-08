@@ -1,5 +1,6 @@
 mod hook;
-mod init;
+pub(crate) mod init;
+mod reset;
 mod tick;
 
 use clap::{Parser, Subcommand};
@@ -17,6 +18,8 @@ pub struct Cli {
 pub enum Command {
     /// 初期セットアップ（卵生成 + ガイド表示）
     Init,
+    /// データをリセットして初期化しなおす
+    Reset,
     /// フックスクリプトを stdout に出力
     Hook {
         /// 対象シェル
@@ -38,6 +41,7 @@ pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show(),
         Some(Command::Init) => init::run(&storage),
+        Some(Command::Reset) => reset::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Tick { cmd, claude_turn }) => {
             tick::run(&storage, cmd.as_deref(), claude_turn)
