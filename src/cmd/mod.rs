@@ -1,4 +1,5 @@
 mod init;
+mod tick;
 
 use clap::{Parser, Subcommand};
 
@@ -15,12 +16,25 @@ pub struct Cli {
 pub enum Command {
     /// 初期セットアップ（卵生成 + ガイド表示）
     Init,
+    /// フックから呼ばれる（内部用）
+    #[command(hide = true)]
+    Tick {
+        /// 実行されたコマンド
+        #[arg(long)]
+        cmd: Option<String>,
+        /// Claude Code ターン記録
+        #[arg(long)]
+        claude_turn: bool,
+    },
 }
 
 pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show(),
         Some(Command::Init) => init::run(&storage),
+        Some(Command::Tick { cmd, claude_turn }) => {
+            tick::run(&storage, cmd.as_deref(), claude_turn)
+        }
     }
 }
 
