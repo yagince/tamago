@@ -109,11 +109,11 @@ mod tests {
         let now = Utc::now();
         let mut pet = crate::pet::PetState::new("test", now);
 
-        // Egg: 0-50, Lv.1 at 0
+        // Egg: 0-5000, Lv.1 at 0
         assert_eq!(pet.level(), 1);
 
-        // Egg: 25/50 → ~50%
-        pet.exp = 25;
+        // Egg: 2500/5000 → ~50%
+        pet.exp = 2500;
         assert!(pet.level() > 1);
         assert!(pet.level() <= 100);
     }

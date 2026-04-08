@@ -72,20 +72,20 @@ impl Stage {
     fn exp_threshold(&self) -> u64 {
         match self {
             Stage::Egg => 0,
-            Stage::Baby => 50,
-            Stage::Child => 200,
-            Stage::Teen => 500,
-            Stage::Adult => 1500,
+            Stage::Baby => 5_000,
+            Stage::Child => 20_000,
+            Stage::Teen => 50_000,
+            Stage::Adult => 150_000,
         }
     }
 
     fn next_threshold(&self) -> u64 {
         match self {
-            Stage::Egg => 50,
-            Stage::Baby => 200,
-            Stage::Child => 500,
-            Stage::Teen => 1500,
-            Stage::Adult => 3000, // Adult 内のレベル上限目安
+            Stage::Egg => 5_000,
+            Stage::Baby => 20_000,
+            Stage::Child => 50_000,
+            Stage::Teen => 150_000,
+            Stage::Adult => 300_000,
         }
     }
 }
@@ -162,6 +162,65 @@ mod tests {
         assert_eq!(pet.born_at, now);
         assert_eq!(pet.category_exp.len(), 7);
         assert!(pet.category_exp.values().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn apply_activities_accumulates_exp_and_category() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        let activities = vec![
+            crate::storage::ActivityRecord {
+                cmd: "git commit".into(),
+                cat: Category::Git,
+                exp: 20,
+                ts: now,
+            },
+            crate::storage::ActivityRecord {
+                cmd: "cargo build".into(),
+                cat: Category::Dev,
+                exp: 8,
+                ts: now,
+            },
+            crate::storage::ActivityRecord {
+                cmd: "git push".into(),
+                cat: Category::Git,
+                exp: 18,
+                ts: now,
+            },
+        ];
+
+        pet.apply_activities(&activities);
+
+        assert_eq!(pet.exp, 46);
+        assert_eq!(pet.category_exp[&Category::Git], 38);
+        assert_eq!(pet.category_exp[&Category::Dev], 8);
+        assert_eq!(pet.last_active, now);
+    }
+
+    #[test]
+    fn apply_empty_activities_changes_nothing() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.apply_activities(&[]);
+
+        assert_eq!(pet.exp, 0);
+    }
+
+    #[test]
+    fn level_stays_within_bounds() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        assert_eq!(pet.level(), 1);
+
+        pet.exp = 2500;
+        assert!(pet.level() > 1);
+        assert!(pet.level() <= 100);
+
+        // exp が閾値を超えてもクラッシュしない
+        pet.exp = 999_999;
+        assert!(pet.level() >= 1);
     }
 
     #[test]
