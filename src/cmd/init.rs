@@ -20,16 +20,17 @@ pub fn run(storage: &Storage) {
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
-    print_guide();
+    print_guide(storage);
 }
 
-fn print_guide() {
+fn print_guide(storage: &Storage) {
     println!("🥚 たまごが生まれました！");
+    println!("📁 {}", storage.base_dir().display());
     println!();
     println!("次にフックを設定してください:");
     println!();
-    println!("  tamago hook --zsh  >> ~/.zshrc");
-    println!("  tamago hook --bash >> ~/.bashrc");
+    println!("  tamago hook zsh  >> ~/.zshrc");
+    println!("  tamago hook bash >> ~/.bashrc");
     println!();
     println!("設定後:");
     println!("  source ~/.zshrc");

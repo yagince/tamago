@@ -44,6 +44,10 @@ impl Storage {
         }
     }
 
+    pub fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
+    }
+
     pub fn ensure_dir(&self) -> io::Result<()> {
         fs::create_dir_all(&self.base_dir)
     }
