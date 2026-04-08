@@ -16,7 +16,7 @@ const EYES: &[&str] = &[
     "o  o", "^  ^", "-  -", "*  *", "@  @", ".  .", "O  O", "u  u", "'  '", "=  =",
 ];
 
-const MOUTHS: &[&str] = &[" w ", " v ", " . ", " o ", " u ", " ~ ", " _ ", " ^ "];
+const MOUTHS: &[&str] = &[" w  ", " v  ", " .  ", " o  ", " u  ", " ~  ", " _  ", " ^  "];
 
 const EARS: &[(&str, &str)] = &[
     (" ^  ^ ", " ~  ~ "),
@@ -51,7 +51,7 @@ fn render_baby(name: &str) -> String {
     let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
 
     format!(
-        "\n   {ear_l}\n  ({eyes})\n   ({mouth})\n  '----'\n"
+        "\n  {ear_l}\n  ({eyes})\n  ({mouth})\n  '----'\n"
     )
 }
 
@@ -63,7 +63,7 @@ fn render_child(name: &str) -> String {
     let mark = pick(MARKS, h, 3);
 
     format!(
-        "\n   {ear_l}\n  ({eyes})\n   ({mouth})\n  |{mark}|\n  d    b\n"
+        "\n  {ear_l}\n  ({eyes})\n  ({mouth})\n  |{mark}|\n  d    b\n"
     )
 }
 
@@ -75,7 +75,7 @@ fn render_teen(name: &str) -> String {
     let mark = pick(MARKS, h, 3);
 
     format!(
-        "\n    {ear_r}\n   ({eyes})\n    ({mouth})\n   /|{mark}|\\\n  / '----' \\\n"
+        "\n   {ear_r}\n   ({eyes})\n   ({mouth})\n   /|{mark}|\\\n  / '----' \\\n"
     )
 }
 
@@ -95,7 +95,7 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     };
 
     format!(
-        "\n     {ear_r}\n    ({eyes})\n     ({mouth})\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
+        "\n    {ear_r}\n    ({eyes})\n    ({mouth})\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
     )
 }
 
