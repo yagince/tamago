@@ -10,9 +10,11 @@ fn name_hash(name: &str) -> usize {
     h as usize
 }
 
+const SALTS: &[u64] = &[0, 7, 13, 19, 29, 37, 43, 53];
+
 fn pick<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
-    // salt ごとに異なるビット範囲を使って衝突を減らす
-    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    let s = SALTS[salt % SALTS.len()];
+    let shifted = hash.wrapping_shr((s as u32) % 64);
     parts[shifted % parts.len()]
 }
 
@@ -82,12 +84,14 @@ const EGG: &str = "\
 \n   \\___/\n";
 
 fn pick_ears(hash: usize, salt: usize) -> (&'static str, &'static str) {
-    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    let s = SALTS[salt % SALTS.len()];
+    let shifted = hash.wrapping_shr((s as u32) % 64);
     EARS[shifted % EARS.len()]
 }
 
 fn pick_cheeks(hash: usize, salt: usize) -> (&'static str, &'static str) {
-    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    let s = SALTS[salt % SALTS.len()];
+    let shifted = hash.wrapping_shr((s as u32) % 64);
     CHEEKS[shifted % CHEEKS.len()]
 }
 
