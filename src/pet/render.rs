@@ -1,13 +1,19 @@
 use super::{Archetype, Stage};
 
 fn name_hash(name: &str) -> usize {
-    name.bytes().fold(0usize, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(b as usize)
-    })
+    // FNV-1a hash for better distribution with multibyte chars
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in name.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h as usize
 }
 
 fn pick<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
-    parts[hash.wrapping_add(salt) % parts.len()]
+    // salt ごとに異なるビット範囲を使って衝突を減らす
+    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    parts[shifted % parts.len()]
 }
 
 // --- パーツ定義 ---
@@ -122,6 +128,16 @@ mod tests {
         let a = ascii_art(&Stage::Baby, &None, "aaa");
         let b = ascii_art(&Stage::Baby, &None, "zzz");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn japanese_names_produce_different_art() {
+        let a = ascii_art(&Stage::Baby, &None, "ピカボス");
+        let b = ascii_art(&Stage::Baby, &None, "ほげほげ");
+        let c = ascii_art(&Stage::Baby, &None, "これはどうだ？");
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
     }
 
     #[test]
