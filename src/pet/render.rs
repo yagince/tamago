@@ -19,26 +19,25 @@ fn pick<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
 // --- パーツ定義 ---
 
 const EYES: &[&str] = &[
-    "o  o", "^  ^", "-  -", "*  *", "@  @", ".  .",
-    "O  O", "u  u", "'  '", "=  =",
-    "o''o", "o..o", "^~~^", "*``*", "@::@",
-    "o><o", "^//^", "-<<-", ".~~.", "O::O",
+    " o  o ", " ^  ^ ", " -  - ", " *  * ", " @  @ ", " .  . ", " O  O ", " u  u ", " '  ' ",
+    " =  = ", " o''o ", " o..o ", " ^~~^ ", " *``* ", " @::@ ", " o><o ", " ^//^ ", " -<<- ",
+    " .~~. ", " O::O ",
 ];
 
 const MOUTHS: &[&str] = &[
-    " w  ", " v  ", " .  ", " o  ", " u  ", " ~  ", " _  ", " ^  ",
-    " 3  ", " m  ", "  - ", " n  ", " Y  ", "=v= ", " d  ", "www ",
+    "  ww  ", "  vv  ", "  ..  ", "  oo  ", "  uu  ", "  ~~  ", "  __  ", "  ^^  ", "  33  ",
+    "  mm  ", "  --  ", "  nn  ", "  <>  ", " =vv= ", "  dd  ", " www  ",
 ];
 
 const EARS: &[(&str, &str)] = &[
-    (" ^  ^ ", " ~  ~ "),
-    (" *  * ", " '  ' "),
-    ("/    \\", " ?  ? "),
-    (" +  + ", " `  ` "),
-    (" v  v ", " n  n "),
-    ("(    )", " o  o "),
-    (" >  < ", " <  > "),
-    (" @  @ ", " #  # "),
+    (" ^    ^ ", " ~    ~ "),
+    (" *    * ", " '    ' "),
+    ("/      \\", " ?    ? "),
+    (" +    + ", " `    ` "),
+    (" v    v ", " n    n "),
+    ("(      )", " o    o "),
+    (" >    < ", " <    > "),
+    (" @    @ ", " #    # "),
 ];
 
 const CHEEKS: &[(&str, &str)] = &[
@@ -51,11 +50,18 @@ const CHEEKS: &[(&str, &str)] = &[
 ];
 
 const FEET: &[&str] = &[
-    "'----'", "d    b", "|_||_|", "()  ()", "\\_/\\_/", "m    m", "`----`", "v    v",
+    "'------'",
+    "d      b",
+    "|_||||_|",
+    "()    ()",
+    "\\_/  \\_/",
+    "m      m",
+    "`------`",
+    "v      v",
 ];
 
 const MARKS: &[&str] = &[
-    "    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ ",
+    "      ", " <>   ", " ::   ", " **   ", " ##   ", " ++   ", " ..   ", " ~~   ",
 ];
 
 pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
@@ -116,7 +122,9 @@ fn render_teen(name: &str) -> String {
     let (cl, cr) = pick_cheeks(h, 3);
     let mark = pick(MARKS, h, 5);
 
-    format!("\n   {ear_r}\n   {cl}{eyes}{cr}\n   {cl}{mouth}{cr}\n   /|{mark}|\\\n  / '----' \\\n")
+    format!(
+        "\n   {ear_r}\n   {cl}{eyes}{cr}\n   {cl}{mouth}{cr}\n   /|{mark}|\\\n  / '------' \\\n"
+    )
 }
 
 fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
@@ -136,7 +144,7 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     };
 
     format!(
-        "\n    {ear_r}\n    {cl}{eyes}{cr}\n    {cl}{mouth}{cr}\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
+        "\n    {ear_r}\n    {cl}{eyes}{cr}\n    {cl}{mouth}{cr}\n  ---|{mark}|---\n  /  '------'  \\\n  |            |\n  '------------'\n  {title}\n"
     )
 }
 
@@ -202,8 +210,21 @@ mod tests {
     #[test]
     fn print_all_stages_for_visual_check() {
         let names = [
-            "abc", "xyz", "tamago", "pikachu", "moglin", "test123", "hello", "world", "rust",
+            "abc",
+            "xyz",
+            "tamago",
+            "pikachu",
+            "moglin",
+            "test123",
+            "hello",
+            "world",
+            "rust",
             "claude",
+            "ピカボス",
+            "ほげほげ",
+            "これはどうだ？",
+            "モグリン",
+            "フワッチ",
         ];
         for name in names {
             println!("=== {name} ===");
