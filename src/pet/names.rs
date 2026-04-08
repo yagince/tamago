@@ -25,6 +25,7 @@ fn ask_claude() -> Option<String> {
     let output = Command::new("claude")
         .args([
             "--print",
+            "--model", "haiku",
             "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
         ])
         .output()
