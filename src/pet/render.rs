@@ -25,9 +25,7 @@ const EARS: &[(&str, &str)] = &[
     (" +  + ", " `  ` "),
 ];
 
-const MARKS: &[&str] = &[
-    "    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ ",
-];
+const MARKS: &[&str] = &["    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ "];
 
 pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
     match stage {
@@ -40,12 +38,11 @@ pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> St
 }
 
 const EGG: &str = "\
-    ___
-   /   \\
-  | .   |
-  |  .  |
-   \\___/
-";
+\n    ___\
+\n   /   \\\
+\n  | .   |\
+\n  |  .  |\
+\n   \\___/\n";
 
 fn render_baby(name: &str) -> String {
     let h = name_hash(name);
@@ -54,12 +51,7 @@ fn render_baby(name: &str) -> String {
     let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
 
     format!(
-        "\
-  {ear_l}
-  ({eyes})
-   ({mouth})
-  '----'
-"
+        "\n   {ear_l}\n  ({eyes})\n   ({mouth})\n  '----'\n"
     )
 }
 
@@ -71,13 +63,7 @@ fn render_child(name: &str) -> String {
     let mark = pick(MARKS, h, 3);
 
     format!(
-        "\
-  {ear_l}
-  ({eyes})
-   ({mouth})
-  |{mark}|
-  d    b
-"
+        "\n   {ear_l}\n  ({eyes})\n   ({mouth})\n  |{mark}|\n  d    b\n"
     )
 }
 
@@ -89,13 +75,7 @@ fn render_teen(name: &str) -> String {
     let mark = pick(MARKS, h, 3);
 
     format!(
-        "\
-   {ear_r}
-  ({eyes})
-   ({mouth})
-  /|{mark}|\\
- / '----' \\
-"
+        "\n    {ear_r}\n   ({eyes})\n    ({mouth})\n   /|{mark}|\\\n  / '----' \\\n"
     )
 }
 
@@ -107,24 +87,15 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     let mark = pick(MARKS, h, 3);
 
     let title = match archetype {
-        Some(Archetype::Versionist) => " ~Versionist~",
-        Some(Archetype::AiMage) => "  ~AI Mage~",
-        Some(Archetype::CloudDweller) => "~CloudDweller~",
-        Some(Archetype::AncientMage) => "~AncientMage~",
-        Some(Archetype::Generalist) | None => " ~Generalist~",
+        Some(Archetype::Versionist) => "  ~Versionist~",
+        Some(Archetype::AiMage) => "   ~AI Mage~",
+        Some(Archetype::CloudDweller) => " ~CloudDweller~",
+        Some(Archetype::AncientMage) => " ~AncientMage~",
+        Some(Archetype::Generalist) | None => "  ~Generalist~",
     };
 
     format!(
-        "\
-    {ear_r}
-   ({eyes})
-    ({mouth})
-  --|{mark}|--
- /  '----'  \\
- |          |
- '----------'
- {title}
-"
+        "\n     {ear_r}\n    ({eyes})\n     ({mouth})\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
     )
 }
 
@@ -179,25 +150,22 @@ mod tests {
 
     #[test]
     fn print_all_stages_for_visual_check() {
-        let names = ["abc", "xyz", "tamago"];
+        let names = [
+            "abc", "xyz", "tamago", "pikachu", "moglin", "test123", "hello", "world", "rust",
+            "claude",
+        ];
         for name in names {
             println!("=== {name} ===");
             for stage in [Stage::Egg, Stage::Baby, Stage::Child, Stage::Teen] {
                 println!("[{stage:?}]");
                 print!("{}", ascii_art(&stage, &None, name));
-                println!();
             }
-            for arch in [
-                Archetype::Versionist,
-                Archetype::AiMage,
-                Archetype::CloudDweller,
-                Archetype::AncientMage,
-                Archetype::Generalist,
-            ] {
-                println!("[Adult/{arch:?}]");
-                print!("{}", ascii_art(&Stage::Adult, &Some(arch), name));
-                println!();
-            }
+            println!("[Adult/Generalist]");
+            print!(
+                "{}",
+                ascii_art(&Stage::Adult, &Some(Archetype::Generalist), name)
+            );
+            println!();
         }
     }
 }
