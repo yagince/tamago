@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PREFIXES: &[&str] = &[
@@ -11,6 +12,34 @@ const SUFFIXES: &[&str] = &[
     "ッチ", "ノン", "バル", "グマ", "ッピ", "ルス", "タン", "サク", "ミー", "ゴン",
     "パス", "ナイト", "ルン", "ビー", "デス",
 ];
+
+pub fn generate_name() -> String {
+    #[cfg(not(test))]
+    if let Some(name) = ask_claude() {
+        return name;
+    }
+    random_name()
+}
+
+fn ask_claude() -> Option<String> {
+    let output = Command::new("claude")
+        .args([
+            "--print",
+            "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let name = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if name.is_empty() || name.len() > 30 {
+        return None;
+    }
+    Some(name)
+}
 
 pub fn random_name() -> String {
     let seed = SystemTime::now()

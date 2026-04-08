@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use crate::pet::names::random_name;
+use crate::pet::names::generate_name;
 use crate::pet::PetState;
 use crate::storage::Storage;
 
@@ -14,7 +14,7 @@ pub fn run(storage: &Storage) {
         .ensure_dir()
         .expect("ディレクトリの作成に失敗しました");
 
-    let name = random_name();
+    let name = generate_name();
     let pet = PetState::new(&name, Utc::now());
     storage
         .save_pet(&pet)
