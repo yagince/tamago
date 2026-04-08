@@ -1,1 +1,4 @@
 /target
+.claude/settings.local.json
+.claude/projects/
+CLAUDE.local.md
