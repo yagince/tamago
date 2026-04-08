@@ -1,3 +1,4 @@
+#[cfg(not(test))]
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -115,6 +116,7 @@ pub fn generate_name() -> String {
     random_name()
 }
 
+#[cfg(not(test))]
 fn ask_claude() -> Option<String> {
     let output = Command::new("claude")
         .args([
