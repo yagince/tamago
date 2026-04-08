@@ -1,7 +1,6 @@
 use super::{Archetype, Stage};
 
 fn name_hash(name: &str) -> usize {
-    // FNV-1a hash for better distribution with multibyte chars
     let mut h: u64 = 0xcbf29ce484222325;
     for b in name.bytes() {
         h ^= b as u64;
@@ -12,51 +11,95 @@ fn name_hash(name: &str) -> usize {
 
 const SALTS: &[u64] = &[0, 7, 13, 19, 29, 37, 43, 53];
 
-fn pick<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
+fn pick_one<'a>(parts: &[&'a str], hash: usize, salt: usize) -> &'a str {
     let s = SALTS[salt % SALTS.len()];
     let shifted = hash.wrapping_shr((s as u32) % 64);
     parts[shifted % parts.len()]
 }
 
-// --- パーツ定義 ---
+fn pick_pair<'a>(parts: &[(&'a str, &'a str)], hash: usize, salt: usize) -> (&'a str, &'a str) {
+    let s = SALTS[salt % SALTS.len()];
+    let shifted = hash.wrapping_shr((s as u32) % 64);
+    parts[shifted % parts.len()]
+}
 
-const EYES: &[&str] = &[
-    " o  o ", " ^  ^ ", " -  - ", " *  * ", " @  @ ", " .  . ", " O  O ", " u  u ", " '  ' ",
-    " =  = ", " o''o ", " o..o ", " ^~~^ ", " *``* ", " @::@ ", " o><o ", " ^//^ ", " -<<- ",
-    " .~~. ", " O::O ",
+// --- 1文字パーツ ---
+
+const EYES: &[(&str, &str)] = &[
+    ("o", "o"),
+    ("^", "^"),
+    ("-", "-"),
+    ("*", "*"),
+    ("@", "@"),
+    (".", "."),
+    ("O", "O"),
+    ("u", "u"),
+    ("'", "'"),
+    ("=", "="),
+    ("0", "0"),
+    ("x", "x"),
+    ("T", "T"),
+    ("~", "~"),
+    (">", "<"),
+    ("$", "$"),
+    ("p", "q"),
+    ("d", "b"),
+    ("n", "n"),
+    ("v", "v"),
 ];
 
-const MOUTHS: &[&str] = &[
-    "  ww  ", "  vv  ", "  ..  ", "  oo  ", "  uu  ", "  ~~  ", "  __  ", "  ^^  ", "  33  ",
-    "  mm  ", "  --  ", "  nn  ", "  <>  ", " =vv= ", "  dd  ", " www  ",
+const BLUSH: &[&str] = &[
+    "  ", "''", "..", "~~", "::", "``", "><", "//", "--", "**", "<>", "##", "||", "^^", "==", "@@",
 ];
 
-// 耳: 全て8文字幅（顔と同じ幅）。インデントはテンプレート側で制御
+const MOUTHS: &[(&str, &str)] = &[
+    ("w", "w"),
+    ("v", "v"),
+    (".", "."),
+    ("o", "o"),
+    ("u", "u"),
+    ("~", "~"),
+    ("_", "_"),
+    ("^", "^"),
+    ("3", "3"),
+    ("m", "m"),
+    ("-", "-"),
+    ("n", "n"),
+    ("<", ">"),
+    ("=", "="),
+    ("d", "d"),
+    ("D", "D"),
+    ("[", "]"),
+    ("{", "}"),
+    ("(", ")"),
+    ("/", "\\"),
+];
+
 const EARS: &[(&str, &str)] = &[
-    (" ^    ^ ", " ~    ~ "),
-    (" *    * ", " '    ' "),
-    (" /    \\ ", " ?    ? "),
-    (" +    + ", " `    ` "),
-    (" v    v ", " n    n "),
-    (" (    ) ", " o    o "),
-    (" >    < ", " <    > "),
-    (" @    @ ", " #    # "),
-    (" !    ! ", " i    i "),
-    (" $    $ ", " &    & "),
-    (" ~    ~ ", " ^    ^ "),
-    (" )    ( ", " (    ) "),
-    (" d    b ", " q    p "),
-    (" Y    Y ", " T    T "),
-    (" }    { ", " {    } "),
-    (" =    = ", " -    - "),
-    (" Ψ    Ψ ", " ψ    ψ "),
-    (" Ω    Ω ", " ω    ω "),
-    (" λ    λ ", " Λ    Λ "),
-    (" Σ    Σ ", " σ    σ "),
-    (" Д    Д ", " Л    Л "),
-    (" Ж    Ж ", " Ф    Ф "),
-    (" π    π ", " τ    τ "),
-    (" δ    δ ", " θ    θ "),
+    ("^", "^"),
+    ("*", "*"),
+    ("/", "\\"),
+    ("+", "+"),
+    ("v", "v"),
+    ("(", ")"),
+    (">", "<"),
+    ("@", "@"),
+    ("!", "!"),
+    ("$", "$"),
+    ("~", "~"),
+    (")", "("),
+    ("d", "b"),
+    ("Y", "Y"),
+    ("}", "{"),
+    ("=", "="),
+    ("Ψ", "Ψ"),
+    ("Ω", "Ω"),
+    ("λ", "λ"),
+    ("Σ", "Σ"),
+    ("Д", "Д"),
+    ("Ж", "Ж"),
+    ("π", "π"),
+    ("δ", "δ"),
 ];
 
 const CHEEKS: &[(&str, &str)] = &[
@@ -97,8 +140,15 @@ const FEET: &[&str] = &[
     "o      o",
 ];
 
-const MARKS: &[&str] = &[
-    "      ", " <>   ", " ::   ", " **   ", " ##   ", " ++   ", " ..   ", " ~~   ",
+const MARKS: &[(&str, &str)] = &[
+    (" ", " "),
+    ("<", ">"),
+    (":", ":"),
+    ("*", "*"),
+    ("#", "#"),
+    ("+", "+"),
+    (".", "."),
+    ("~", "~"),
 ];
 
 pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
@@ -118,62 +168,109 @@ const EGG: &str = "\
 \n  |  .  |\
 \n   \\___/\n";
 
-fn pick_ears(hash: usize, salt: usize) -> (&'static str, &'static str) {
-    let s = SALTS[salt % SALTS.len()];
-    let shifted = hash.wrapping_shr((s as u32) % 64);
-    EARS[shifted % EARS.len()]
+struct Parts {
+    el: &'static str,  // 左耳
+    er: &'static str,  // 右耳
+    le: &'static str,  // 左目
+    re: &'static str,  // 右目
+    bl: &'static str,  // 目の間装飾 (2文字)
+    mol: &'static str, // 口左
+    mor: &'static str, // 口右
+    cl: &'static str,  // 左頬
+    cr: &'static str,  // 右頬
+    ml: &'static str,  // 左マーク
+    mr: &'static str,  // 右マーク
+    ft: &'static str,  // 足 (8文字)
 }
 
-fn pick_cheeks(hash: usize, salt: usize) -> (&'static str, &'static str) {
-    let s = SALTS[salt % SALTS.len()];
-    let shifted = hash.wrapping_shr((s as u32) % 64);
-    CHEEKS[shifted % CHEEKS.len()]
+fn pick_parts(name: &str) -> Parts {
+    let h = name_hash(name);
+    let (el, er) = pick_pair(EARS, h, 0);
+    let (le, re) = pick_pair(EYES, h, 1);
+    let bl = pick_one(BLUSH, h, 2);
+    let (mol, mor) = pick_pair(MOUTHS, h, 3);
+    let (cl, cr) = pick_pair(CHEEKS, h, 4);
+    let (ml, mr) = pick_pair(MARKS, h, 5);
+    let ft = pick_one(FEET, h, 6);
+
+    Parts {
+        el,
+        er,
+        le,
+        re,
+        bl,
+        mol,
+        mor,
+        cl,
+        cr,
+        ml,
+        mr,
+        ft,
+    }
 }
+
+//  Baby:
+//   el      er        耳: 位置3と8
+//  cl le bl re cr     顔: 位置2-9 (頬1+目1+装飾2+目1+頬1 = 8)
+//  cl  momo  cr       口: 位置2-9
+//  feet                足: 位置2-9
 
 fn render_baby(name: &str) -> String {
-    let h = name_hash(name);
-    let eyes = pick(EYES, h, 0);
-    let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, _) = pick_ears(h, 2);
-    let (cl, cr) = pick_cheeks(h, 3);
-    let feet = pick(FEET, h, 4);
-
-    format!("\n  {ear_l}\n  {cl}{eyes}{cr}\n  {cl}{mouth}{cr}\n  {feet}\n")
+    let p = pick_parts(name);
+    format!(
+        "\n  {el}      {er}\n  {cl} {le}{bl}{re} {cr}\n  {cl}  {mol}{mor}  {cr}\n  {ft}\n",
+        el = p.el,
+        er = p.er,
+        cl = p.cl,
+        cr = p.cr,
+        le = p.le,
+        re = p.re,
+        bl = p.bl,
+        mol = p.mol,
+        mor = p.mor,
+        ft = p.ft,
+    )
 }
 
 fn render_child(name: &str) -> String {
-    let h = name_hash(name);
-    let eyes = pick(EYES, h, 0);
-    let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, _) = pick_ears(h, 2);
-    let (cl, cr) = pick_cheeks(h, 3);
-    let mark = pick(MARKS, h, 5);
-    let feet = pick(FEET, h, 4);
-
-    format!("\n  {ear_l}\n  {cl}{eyes}{cr}\n  {cl}{mouth}{cr}\n  |{mark}|\n  {feet}\n")
+    let p = pick_parts(name);
+    format!(
+        "\n  {el}      {er}\n  {cl} {le}{bl}{re} {cr}\n  {cl}  {mol}{mor}  {cr}\n  |  {ml}{mr}  |\n  {ft}\n",
+        el = p.el,
+        er = p.er,
+        cl = p.cl,
+        cr = p.cr,
+        le = p.le,
+        re = p.re,
+        bl = p.bl,
+        mol = p.mol,
+        mor = p.mor,
+        ml = p.ml,
+        mr = p.mr,
+        ft = p.ft,
+    )
 }
 
 fn render_teen(name: &str) -> String {
-    let h = name_hash(name);
-    let eyes = pick(EYES, h, 0);
-    let mouth = pick(MOUTHS, h, 1);
-    let (_, ear_r) = pick_ears(h, 2);
-    let (cl, cr) = pick_cheeks(h, 3);
-    let mark = pick(MARKS, h, 5);
-
+    let p = pick_parts(name);
     format!(
-        "\n   {ear_r}\n   {cl}{eyes}{cr}\n   {cl}{mouth}{cr}\n   /|{mark}|\\\n  / '------' \\\n"
+        "\n   {el}      {er}\n   {cl} {le}{bl}{re} {cr}\n   {cl}  {mol}{mor}  {cr}\n   /| {ml}{mr}  |\\\n  / '-----' \\\n",
+        el = p.el,
+        er = p.er,
+        cl = p.cl,
+        cr = p.cr,
+        le = p.le,
+        re = p.re,
+        bl = p.bl,
+        mol = p.mol,
+        mor = p.mor,
+        ml = p.ml,
+        mr = p.mr,
     )
 }
 
 fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
-    let h = name_hash(name);
-    let eyes = pick(EYES, h, 0);
-    let mouth = pick(MOUTHS, h, 1);
-    let (_, ear_r) = pick_ears(h, 2);
-    let (cl, cr) = pick_cheeks(h, 3);
-    let mark = pick(MARKS, h, 5);
-
+    let p = pick_parts(name);
     let title = match archetype {
         Some(Archetype::Versionist) => "  ~Versionist~",
         Some(Archetype::AiMage) => "   ~AI Mage~",
@@ -181,9 +278,20 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
         Some(Archetype::AncientMage) => " ~AncientMage~",
         Some(Archetype::Generalist) | None => "  ~Generalist~",
     };
-
     format!(
-        "\n    {ear_r}\n    {cl}{eyes}{cr}\n    {cl}{mouth}{cr}\n  ---|{mark}|---\n  /  '------'  \\\n  |            |\n  '------------'\n  {title}\n"
+        "\n    {el}      {er}\n    {cl} {le}{bl}{re} {cr}\n    {cl}  {mol}{mor}  {cr}\n  --|  {ml}{mr}  |--\n  /  '------'  \\\n  |            |\n  '------------'\n  {title}\n",
+        el = p.el,
+        er = p.er,
+        cl = p.cl,
+        cr = p.cr,
+        le = p.le,
+        re = p.re,
+        bl = p.bl,
+        mol = p.mol,
+        mor = p.mor,
+        ml = p.ml,
+        mr = p.mr,
+        title = title,
     )
 }
 
