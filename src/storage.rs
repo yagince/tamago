@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, BufRead, Seek, Write};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -93,6 +93,32 @@ impl Storage {
         locked.write_all(line.as_bytes())?;
         // drop で自動 unlock
         Ok(())
+    }
+
+    /// activity_cursor 以降の未集計レコードを読み、新しい cursor 位置を返す
+    pub fn read_pending_activities(&self, cursor: u64) -> io::Result<(Vec<ActivityRecord>, u64)> {
+        let path = self.activity_file();
+        if !path.exists() {
+            return Ok((vec![], cursor));
+        }
+
+        let mut file = fs::File::open(&path)?;
+        file.seek(io::SeekFrom::Start(cursor))?;
+
+        let mut records = Vec::new();
+        let reader = io::BufReader::new(&file);
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(record) = serde_json::from_str::<ActivityRecord>(&line) {
+                records.push(record);
+            }
+        }
+
+        let new_cursor = file.stream_position()?;
+        Ok((records, new_cursor))
     }
 
     fn lock_file(&self) -> PathBuf {

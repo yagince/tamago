@@ -1,7 +1,7 @@
 use chrono::Utc;
 
-use crate::pet::names::random_name;
 use crate::pet::PetState;
+use crate::pet::names::random_name;
 use crate::storage::Storage;
 
 pub fn run(storage: &Storage) {

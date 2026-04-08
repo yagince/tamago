@@ -11,7 +11,9 @@ pub fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let mut pet = storage.load_pet().expect("ペットが見つかりません");
     let old = pet.name.clone();
     pet.name = new_name.clone();
-    storage.save_pet(&pet).expect("pet.json の保存に失敗しました");
+    storage
+        .save_pet(&pet)
+        .expect("pet.json の保存に失敗しました");
     println!("{old} → {new_name} に改名しました！");
 }
 

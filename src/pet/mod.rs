@@ -52,7 +52,68 @@ pub struct PetState {
     pub activity_cursor: u64,
 }
 
+impl Stage {
+    pub fn emoji(&self, archetype: &Option<Archetype>) -> &'static str {
+        match self {
+            Stage::Egg => "🥚",
+            Stage::Baby => "🐣",
+            Stage::Child => "🐥",
+            Stage::Teen => "🐤",
+            Stage::Adult => match archetype {
+                Some(Archetype::Versionist) => "🐙",
+                Some(Archetype::AiMage) => "🧙",
+                Some(Archetype::CloudDweller) => "☁️",
+                Some(Archetype::AncientMage) => "📜",
+                Some(Archetype::Generalist) | None => "🦊",
+            },
+        }
+    }
+
+    fn exp_threshold(&self) -> u64 {
+        match self {
+            Stage::Egg => 0,
+            Stage::Baby => 50,
+            Stage::Child => 200,
+            Stage::Teen => 500,
+            Stage::Adult => 1500,
+        }
+    }
+
+    fn next_threshold(&self) -> u64 {
+        match self {
+            Stage::Egg => 50,
+            Stage::Baby => 200,
+            Stage::Child => 500,
+            Stage::Teen => 1500,
+            Stage::Adult => 3000, // Adult 内のレベル上限目安
+        }
+    }
+}
+
 impl PetState {
+    pub fn level(&self) -> u64 {
+        let base = self.stage.exp_threshold();
+        let range = self.stage.next_threshold() - base;
+        if range == 0 {
+            return 1;
+        }
+        let progress = self.exp.saturating_sub(base);
+        (progress * 99 / range).min(99) + 1
+    }
+
+    pub fn emoji(&self) -> &'static str {
+        self.stage.emoji(&self.archetype)
+    }
+
+    /// 未集計の activity を反映する
+    pub fn apply_activities(&mut self, activities: &[crate::storage::ActivityRecord]) {
+        for record in activities {
+            self.exp += record.exp;
+            *self.category_exp.entry(record.cat.clone()).or_insert(0) += record.exp;
+            self.last_active = record.ts;
+        }
+    }
+
     pub fn new(name: impl Into<String>, now: DateTime<Utc>) -> Self {
         let mut category_exp = HashMap::new();
         for cat in [

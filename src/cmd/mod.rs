@@ -2,6 +2,7 @@ mod hook;
 pub(crate) mod init;
 mod name;
 mod reset;
+mod show;
 mod tick;
 
 use clap::{Parser, Subcommand};
@@ -48,7 +49,7 @@ pub enum Command {
 
 pub fn run(cli: Cli, storage: Storage) {
     match cli.command {
-        None => show(),
+        None => show::run(&storage),
         Some(Command::Init) => init::run(&storage),
         Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai),
         Some(Command::Reset) => reset::run(&storage),
@@ -57,8 +58,4 @@ pub fn run(cli: Cli, storage: Storage) {
             tick::run(&storage, cmd.as_deref(), claude_turn)
         }
     }
-}
-
-fn show() {
-    todo!("show")
 }
