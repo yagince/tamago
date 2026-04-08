@@ -22,16 +22,37 @@ const EYES: &[&str] = &[
     "o  o", "^  ^", "-  -", "*  *", "@  @", ".  .", "O  O", "u  u", "'  '", "=  =",
 ];
 
-const MOUTHS: &[&str] = &[" w  ", " v  ", " .  ", " o  ", " u  ", " ~  ", " _  ", " ^  "];
+const MOUTHS: &[&str] = &[
+    " w  ", " v  ", " .  ", " o  ", " u  ", " ~  ", " _  ", " ^  ",
+];
 
 const EARS: &[(&str, &str)] = &[
     (" ^  ^ ", " ~  ~ "),
     (" *  * ", " '  ' "),
     ("/    \\", " ?  ? "),
     (" +  + ", " `  ` "),
+    (" v  v ", " n  n "),
+    ("(    )", " o  o "),
+    (" >  < ", " <  > "),
+    (" @  @ ", " #  # "),
 ];
 
-const MARKS: &[&str] = &["    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ "];
+const CHEEKS: &[(&str, &str)] = &[
+    ("(", ")"),
+    ("[", "]"),
+    ("{", "}"),
+    ("<", ">"),
+    ("(", ")"),
+    ("[", "]"),
+];
+
+const FEET: &[&str] = &[
+    "'----'", "d    b", "|_||_|", "()  ()", "\\_/\\_/", "m    m", "`----`", "v    v",
+];
+
+const MARKS: &[&str] = &[
+    "    ", " <> ", " :: ", " ** ", " ## ", " ++ ", " .. ", " ~~ ",
+];
 
 pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
     match stage {
@@ -50,47 +71,57 @@ const EGG: &str = "\
 \n  |  .  |\
 \n   \\___/\n";
 
+fn pick_ears(hash: usize, salt: usize) -> (&'static str, &'static str) {
+    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    EARS[shifted % EARS.len()]
+}
+
+fn pick_cheeks(hash: usize, salt: usize) -> (&'static str, &'static str) {
+    let shifted = hash.wrapping_shr((salt as u32 * 7) % 64);
+    CHEEKS[shifted % CHEEKS.len()]
+}
+
 fn render_baby(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
+    let (ear_l, _) = pick_ears(h, 2);
+    let (cl, cr) = pick_cheeks(h, 3);
+    let feet = pick(FEET, h, 4);
 
-    format!(
-        "\n  {ear_l}\n  ({eyes})\n  ({mouth})\n  '----'\n"
-    )
+    format!("\n  {ear_l}\n  {cl}{eyes}{cr}\n  {cl}{mouth}{cr}\n  {feet}\n")
 }
 
 fn render_child(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (ear_l, _) = EARS[h.wrapping_add(2) % EARS.len()];
-    let mark = pick(MARKS, h, 3);
+    let (ear_l, _) = pick_ears(h, 2);
+    let (cl, cr) = pick_cheeks(h, 3);
+    let mark = pick(MARKS, h, 5);
+    let feet = pick(FEET, h, 4);
 
-    format!(
-        "\n  {ear_l}\n  ({eyes})\n  ({mouth})\n  |{mark}|\n  d    b\n"
-    )
+    format!("\n  {ear_l}\n  {cl}{eyes}{cr}\n  {cl}{mouth}{cr}\n  |{mark}|\n  {feet}\n")
 }
 
 fn render_teen(name: &str) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (_, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
-    let mark = pick(MARKS, h, 3);
+    let (_, ear_r) = pick_ears(h, 2);
+    let (cl, cr) = pick_cheeks(h, 3);
+    let mark = pick(MARKS, h, 5);
 
-    format!(
-        "\n   {ear_r}\n   ({eyes})\n   ({mouth})\n   /|{mark}|\\\n  / '----' \\\n"
-    )
+    format!("\n   {ear_r}\n   {cl}{eyes}{cr}\n   {cl}{mouth}{cr}\n   /|{mark}|\\\n  / '----' \\\n")
 }
 
 fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     let h = name_hash(name);
     let eyes = pick(EYES, h, 0);
     let mouth = pick(MOUTHS, h, 1);
-    let (_, ear_r) = EARS[h.wrapping_add(2) % EARS.len()];
-    let mark = pick(MARKS, h, 3);
+    let (_, ear_r) = pick_ears(h, 2);
+    let (cl, cr) = pick_cheeks(h, 3);
+    let mark = pick(MARKS, h, 5);
 
     let title = match archetype {
         Some(Archetype::Versionist) => "  ~Versionist~",
@@ -101,7 +132,7 @@ fn render_adult(name: &str, archetype: &Option<Archetype>) -> String {
     };
 
     format!(
-        "\n    {ear_r}\n    ({eyes})\n    ({mouth})\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
+        "\n    {ear_r}\n    {cl}{eyes}{cr}\n    {cl}{mouth}{cr}\n  ---|{mark}|---\n  /  '----'  \\\n  |          |\n  '----------'\n  {title}\n"
     )
 }
 
