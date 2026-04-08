@@ -21,15 +21,18 @@ pub fn run(storage: &Storage) {
 }
 
 fn print_status(pet: &crate::pet::PetState) {
+    let aa = crate::pet::render::ascii_art(&pet.stage, &pet.archetype);
+    print!("{aa}");
+
     let emoji = pet.emoji();
     let lv = pet.level();
     println!(
-        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger}",
+        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger}  EXP:{exp}",
         name = pet.name,
         mood = pet.mood,
         hunger = pet.hunger,
+        exp = pet.exp,
     );
-    println!("  EXP: {}", pet.exp);
 }
 
 #[cfg(test)]
