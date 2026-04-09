@@ -1,0 +1,106 @@
+pub const ADULT_VERSIONIST: &[&str] = &[
+    "\
+\n    ▄█████▄\
+\n   █ ●   ● █\
+\n   █ ░   ░ █\
+\n   █  ═══  █\
+\n   ██ ▓▓▓ ██\
+\n    █ ███ █\
+\n    █▀   █▀\
+\n   🐙 Versionist\n",
+    "\
+\n    ▄█████▄\
+\n   █ ◉   ◉ █\
+\n   █ ░   ░ █\
+\n   █   △   █\
+\n   ██ ▓▓▓ ██\
+\n    █ ███ █\
+\n    █▀   █▀\
+\n   🐙 Versionist\n",
+];
+
+pub const ADULT_AIMAGE: &[&str] = &[
+    "\
+\n      ▄▄▄\
+\n    ▄█▓▓▓█▄\
+\n   █ ★   ★ █\
+\n   █ ░   ░ █\
+\n   █  ═══  █\
+\n   ██ ░░░ ██\
+\n    █     █\
+\n    █▀   █▀\
+\n   🧙 AI Mage\n",
+    "\
+\n      ▄▄▄\
+\n    ▄█▓▓▓█▄\
+\n   █ ◆   ◆ █\
+\n   █       █\
+\n   █   ω   █\
+\n   ██ ░░░ ██\
+\n    █     █\
+\n    █▀   █▀\
+\n   🧙 AI Mage\n",
+];
+
+pub const ADULT_CLOUD: &[&str] = &[
+    "\
+\n    ░▄███▄░\
+\n   █ ○   ○ █\
+\n   █       █\
+\n   █  ───  █\
+\n   ██░░░░░██\
+\n    █     █\
+\n    █▀   █▀\
+\n   ☁  CloudDweller\n",
+    "\
+\n    ░▄███▄░\
+\n   █ ◎   ◎ █\
+\n   █ ░   ░ █\
+\n   █   △   █\
+\n   ██░░░░░██\
+\n    █     █\
+\n    █▀   █▀\
+\n   ☁  CloudDweller\n",
+];
+
+pub const ADULT_ANCIENT: &[&str] = &[
+    "\
+\n    ▄█▀▀▀█▄\
+\n   █ ▫   ▫ █\
+\n   █       █\
+\n   █  ═══  █\
+\n   ██▒▒▒▒▒██\
+\n    █     █\
+\n    █▀   █▀\
+\n   📜 AncientMage\n",
+    "\
+\n    ▄█▀▀▀█▄\
+\n   █ ◆   ◆ █\
+\n   █       █\
+\n   █   ω   █\
+\n   ██▒▒▒▒▒██\
+\n    █     █\
+\n    █▀   █▀\
+\n   📜 AncientMage\n",
+];
+
+pub const ADULT_GENERALIST: &[&str] = &[
+    "\
+\n    ▄█████▄\
+\n   █ ●   ● █\
+\n   █ ░   ░ █\
+\n   █  ▽▽   █\
+\n   ██     ██\
+\n    █     █\
+\n    █▀   █▀\
+\n   🦊 Generalist\n",
+    "\
+\n    ▄█████▄\
+\n   █ ^   ^ █\
+\n   █ ░   ░ █\
+\n   █   ω   █\
+\n   ██     ██\
+\n    █     █\
+\n    █▀   █▀\
+\n   🦊 Generalist\n",
+];
