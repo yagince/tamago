@@ -74,6 +74,52 @@ fn print_status(pet: &crate::pet::PetState) {
         hunger = pet.hunger,
         exp = pet.exp,
     );
+
+    print_category_bars(pet);
+}
+
+/// category_exp を棒グラフ形式で表示。exp 多い順にソートして、最大値を 20 cols に割り当てる。
+fn print_category_bars(pet: &crate::pet::PetState) {
+    use crate::pet::Category;
+
+    const BAR_WIDTH: usize = 20;
+    const RESET: &str = "\x1b[0m";
+
+    let cats: &[(Category, &str, &str, &str)] = &[
+        (Category::Git, "Git  ", "🔀", "\x1b[96m"),   // bright cyan
+        (Category::Ai, "AI   ", "🧠", "\x1b[95m"),    // bright magenta
+        (Category::Dev, "Dev  ", "🛠️", "\x1b[92m"),   // bright green
+        (Category::Infra, "Infra", "☁️", "\x1b[94m"), // bright blue
+        (Category::Editor, "Edit ", "📝", "\x1b[93m"), // bright yellow
+        (Category::Basic, "Basic", "🐚", "\x1b[97m"), // bright white
+        (Category::Other, "Other", "✨", "\x1b[90m"), // bright black (gray)
+    ];
+
+    let max = pet
+        .category_exp
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(0)
+        .max(1);
+
+    // 値で降順ソート
+    let mut sorted: Vec<_> = cats.iter().collect();
+    sorted.sort_by_key(|(cat, _, _, _)| std::cmp::Reverse(*pet.category_exp.get(cat).unwrap_or(&0)));
+
+    println!();
+    for (cat, label, icon, color) in sorted {
+        let value = *pet.category_exp.get(cat).unwrap_or(&0);
+        // 非ゼロ値は必ず 1 文字以上表示
+        let bar_len = if value == 0 {
+            0
+        } else {
+            ((value * BAR_WIDTH as u64 / max) as usize).max(1)
+        };
+        let bar: String = "█".repeat(bar_len);
+        let pad: String = " ".repeat(BAR_WIDTH - bar_len);
+        println!("  {icon} {label} {color}{bar}{RESET}{pad} {value}");
+    }
 }
 
 #[cfg(test)]
