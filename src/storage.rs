@@ -10,7 +10,6 @@ use crate::pet::{Category, PetState};
 
 const PET_FILE: &str = "pet.json";
 const ACTIVITY_FILE: &str = "activity.jsonl";
-const LAST_TOKENS_FILE: &str = "last_output_tokens";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityRecord {
@@ -79,23 +78,6 @@ impl Storage {
 
     pub fn activity_file(&self) -> PathBuf {
         self.base_dir.join(ACTIVITY_FILE)
-    }
-
-    pub fn last_tokens_file(&self) -> PathBuf {
-        self.base_dir.join(LAST_TOKENS_FILE)
-    }
-
-    /// 前回 tick で受け取った累積 output_tokens を読む（初回は 0）。
-    pub fn read_last_output_tokens(&self) -> u64 {
-        fs::read_to_string(self.last_tokens_file())
-            .ok()
-            .and_then(|s| s.trim().parse::<u64>().ok())
-            .unwrap_or(0)
-    }
-
-    /// 累積 output_tokens を保存する。
-    pub fn write_last_output_tokens(&self, tokens: u64) -> io::Result<()> {
-        fs::write(self.last_tokens_file(), tokens.to_string())
     }
 
     pub fn append_activity(&self, record: &ActivityRecord) -> io::Result<()> {

@@ -5,12 +5,21 @@ use crate::tracker;
 
 pub fn run(storage: &Storage, cmd: Option<&str>, claude_turn: bool, output_tokens: Option<u64>) {
     let record = if claude_turn {
-        // output_tokens は Claude Code の累積値なので、前回値との差分を使う
+        // output_tokens は Claude Code の累積値なので、pet.json に記録した
+        // 前回値との差分を使う
         let total = output_tokens.unwrap_or(0);
-        let last = storage.read_last_output_tokens();
-        let delta = total.saturating_sub(last);
-        // 次回のために最新値を保存
-        let _ = storage.write_last_output_tokens(total);
+        let delta = if let Ok(_lock) = storage.lock() {
+            if let Ok(mut pet) = storage.load_pet() {
+                let d = total.saturating_sub(pet.last_output_tokens);
+                pet.last_output_tokens = total;
+                let _ = storage.save_pet(&pet);
+                d
+            } else {
+                total
+            }
+        } else {
+            total
+        };
         let score = tracker::claude_turn_score(delta);
         ActivityRecord {
             cmd: "--claude-turn".into(),
@@ -46,6 +55,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
         storage.ensure_dir().unwrap();
+        super::super::init::run(&storage);
         (dir, storage)
     }
 

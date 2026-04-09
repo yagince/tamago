@@ -53,6 +53,9 @@ pub struct PetState {
     pub just_evolved: bool,
     #[serde(default)]
     pub just_leveled_up: bool,
+    /// 前回の tick で受け取った累積 output_tokens。差分計算用。
+    #[serde(default)]
+    pub last_output_tokens: u64,
 }
 
 impl Stage {
@@ -208,6 +211,7 @@ impl PetState {
             last_active: now,
             just_evolved: false,
             just_leveled_up: false,
+            last_output_tokens: 0,
         }
     }
 }
