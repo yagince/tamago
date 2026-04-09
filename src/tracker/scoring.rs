@@ -5,6 +5,25 @@ pub struct Score {
     pub category: Category,
 }
 
+/// Claude Code の 1 ターンぶんの経験値を算出する。
+/// output_tokens の量に応じて階段状に配分する。
+pub fn claude_turn_score(output_tokens: u64) -> Score {
+    let exp = match output_tokens {
+        0..=50 => 1,
+        51..=200 => 2,
+        201..=500 => 4,
+        501..=1500 => 7,
+        1501..=4000 => 12,
+        4001..=10000 => 20,
+        10001..=25000 => 35,
+        _ => 50,
+    };
+    Score {
+        exp,
+        category: Category::Ai,
+    }
+}
+
 pub fn score(cmd: &str) -> Score {
     let mut parts = cmd.split_whitespace();
     let base = match parts.next() {
@@ -169,5 +188,36 @@ mod tests {
         let s = score("/usr/bin/git commit -m test");
         assert_eq!(s.exp, 20);
         assert_eq!(s.category, Category::Git);
+    }
+
+    #[test]
+    fn claude_turn_tiers() {
+        let cases = [
+            (0, 1),
+            (50, 1),
+            (51, 2),
+            (200, 2),
+            (201, 4),
+            (500, 4),
+            (501, 7),
+            (1500, 7),
+            (1501, 12),
+            (4000, 12),
+            (4001, 20),
+            (10000, 20),
+            (10001, 35),
+            (25000, 35),
+            (25001, 50),
+            (100000, 50),
+        ];
+        for (tokens, expected) in cases {
+            let s = claude_turn_score(tokens);
+            assert_eq!(
+                s.exp, expected,
+                "tokens={tokens} → expected {expected}, got {}",
+                s.exp
+            );
+            assert_eq!(s.category, Category::Ai);
+        }
     }
 }

@@ -1,3 +1,3 @@
 mod scoring;
 
-pub use scoring::score;
+pub use scoring::{claude_turn_score, score};
