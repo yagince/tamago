@@ -4,6 +4,7 @@ pub const TEEN: &[PetArt] = &[
     // クール
     PetArt {
         creature_type: "クール",
+        color: "\x1b[94m",
         art: "\
 \n      ▄▄▄\
 \n    ▄█   █▄\
@@ -17,6 +18,7 @@ pub const TEEN: &[PetArt] = &[
     // やんちゃ
     PetArt {
         creature_type: "やんちゃ",
+        color: "\x1b[91m",
         art: "\
 \n    ▄█▄ ▄█▄\
 \n   █ ◉   ◉ █\
@@ -29,6 +31,7 @@ pub const TEEN: &[PetArt] = &[
     // 凛々しい
     PetArt {
         creature_type: "凛々しい",
+        color: "\x1b[96m",
         art: "\
 \n    ╱▀▀▀▀╲\
 \n   █ ▪   ▪ █\
@@ -41,6 +44,7 @@ pub const TEEN: &[PetArt] = &[
     // 元気
     PetArt {
         creature_type: "元気",
+        color: "\x1b[91m",
         art: "\
 \n      ▄▄▄\
 \n    ▄█   █▄\

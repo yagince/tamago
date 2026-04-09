@@ -4,6 +4,7 @@ pub const BABY: &[PetArt] = &[
     // スライム
     PetArt {
         creature_type: "スライム",
+        color: "\x1b[92m",
         art: "\
 \n   ▄▄▀▀▀▀▀▀▄▄\
 \n ▄ ▄████████▄ ▄\
@@ -16,6 +17,7 @@ pub const BABY: &[PetArt] = &[
     // もふもふ鳥
     PetArt {
         creature_type: "もふもふ鳥",
+        color: "\x1b[93m",
         art: "\
 \n     ▄▀▀▀▀▀ ▄\
 \n   ▄▀        ▀▄\
@@ -30,6 +32,7 @@ pub const BABY: &[PetArt] = &[
     // 子猫
     PetArt {
         creature_type: "子猫",
+        color: "\x1b[97m",
         art: "\
 \n    ▄      ▄\
 \n   ▄▀▄▄▄▄▄▄▀▄\
@@ -43,6 +46,7 @@ pub const BABY: &[PetArt] = &[
     // ペンギン
     PetArt {
         creature_type: "ペンギン",
+        color: "\x1b[96m",
         art: "\
 \n    ██████\
 \n  ▄████████▄\
@@ -57,6 +61,7 @@ pub const BABY: &[PetArt] = &[
     // うさぎ
     PetArt {
         creature_type: "うさぎ",
+        color: "\x1b[97m",
         art: "\
 \n  ▄▀▀▄  ▄▀▀▄\
 \n  █  █  █  █\
@@ -70,6 +75,7 @@ pub const BABY: &[PetArt] = &[
     // カエル
     PetArt {
         creature_type: "カエル",
+        color: "\x1b[92m",
         art: "\
 \n  ▄▀▀▄▄▄▄▀▀▄\
 \n █ ▄  ▄▄ ▄  █\
@@ -81,6 +87,7 @@ pub const BABY: &[PetArt] = &[
     // きのこ
     PetArt {
         creature_type: "きのこ",
+        color: "\x1b[91m",
         art: "\
 \n   ▄▄▀▀▀▀▄▄\
 \n ▄▀        ▀▄\
@@ -93,6 +100,7 @@ pub const BABY: &[PetArt] = &[
     // タコ
     PetArt {
         creature_type: "タコ",
+        color: "\x1b[95m",
         art: "\
 \n   ▄ ▀▀▀▀ ▄\
 \n ▄▀        ▀▄\
@@ -106,6 +114,7 @@ pub const BABY: &[PetArt] = &[
     // おばけ
     PetArt {
         creature_type: "おばけ",
+        color: "\x1b[97m",
         art: "\
 \n    ▄▀▀▀▀▄\
 \n  ▄▀      ▀▄\
@@ -118,6 +127,7 @@ pub const BABY: &[PetArt] = &[
     // キツネ
     PetArt {
         creature_type: "キツネ",
+        color: "\x1b[91m",
         art: "\
 \n  ▄▀▄    ▄▀▄\
 \n █  ▀████▀  █\
@@ -130,6 +140,7 @@ pub const BABY: &[PetArt] = &[
     // 子犬
     PetArt {
         creature_type: "子犬",
+        color: "\x1b[93m",
         art: "\
 \n  ▄▀▄    ▄▀▄\
 \n  █ ▀▄▄▄▄▀ █\
@@ -142,6 +153,7 @@ pub const BABY: &[PetArt] = &[
     // ハムスター
     PetArt {
         creature_type: "ハムスター",
+        color: "\x1b[93m",
         art: "\
 \n ▄▀▀▄    ▄▀▀▄\
 \n█   ▀▄▄▄▄▀   █\

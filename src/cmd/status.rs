@@ -3,6 +3,30 @@ use crate::storage::Storage;
 /// activity.jsonl がこのサイズ以上なら集計する
 const AGGREGATE_THRESHOLD: u64 = 512;
 
+/// CC statusline は行頭の空白を strip するため、空白 ` ` を
+/// 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
+const EMPTY: &str = "\x1b[30m\u{2588}\x1b[0m";
+const RESET: &str = "\x1b[0m";
+
+/// 進化/レベルアップ演出用: AA にテーマ色を適用
+fn decorate_evolution_art(aa: &str, color: &str) -> String {
+    let aa = aa.trim_matches('\n');
+    let mut out = String::new();
+    for (i, line) in aa.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        for ch in line.chars() {
+            match ch {
+                ' ' => out.push_str(EMPTY),
+                '▀' | '▄' | '█' => out.push_str(&format!("{color}{ch}{RESET}")),
+                _ => out.push(ch),
+            }
+        }
+    }
+    out
+}
+
 
 pub fn run(storage: &Storage) {
     let mut pet = match storage.load_pet() {
@@ -41,9 +65,7 @@ pub fn run(storage: &Storage) {
     let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
 
     if pet.just_evolved || pet.just_leveled_up {
-        // 進化 or レベルアップ演出: halfblock AA を表示
-        // CC statusline は空白を strip するため、空白 ` ` を
-        // 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
+        // 進化 or レベルアップ演出: halfblock AA をテーマ色 + フレーム付きで表示
         let aa = crate::pet::render::ascii_art(
             &pet.stage,
             &pet.archetype,
@@ -51,17 +73,23 @@ pub fn run(storage: &Storage) {
             pet.hunger,
             pet.mood,
         );
-        let aa = aa.trim_matches('\n');
-        let replaced = aa.replace(' ', "\x1b[30m\u{2588}\x1b[0m");
-        print!("{replaced}");
+        let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name);
+        let framed = decorate_evolution_art(&aa, color);
+        print!("{framed}");
 
-        let prefix = if pet.just_evolved { "🎉" } else { "✨" };
+        let label = if pet.just_evolved {
+            "🎉 進化！"
+        } else {
+            "✨ レベルアップ！"
+        };
         pet.just_evolved = false;
         pet.just_leveled_up = false;
         let _ = storage.save_pet(&pet);
 
+        // AA とステータスの間に空行（CC statusline に strip されないよう
+        // 見えない黒 `█` を 1 文字だけ置く）
         print!(
-            "\n{prefix} {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
+            "\n{EMPTY}\n{label} {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
             name = pet.name,
             mood = pet.mood,
             hunger = pet.hunger,

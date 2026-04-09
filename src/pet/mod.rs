@@ -448,6 +448,7 @@ mod tests {
         assert!(pet.mood <= 100);
     }
 
+    #[test]
     fn pet_state_roundtrip_json() {
         let now = Utc::now();
         let pet = PetState::new("クロード", now);

@@ -11,6 +11,8 @@ use super::{Archetype, Stage};
 pub struct PetArt {
     pub art: &'static str,
     pub creature_type: &'static str,
+    /// 進化/レベルアップ演出用のテーマ色（ANSI fg escape）
+    pub color: &'static str,
 }
 
 fn name_hash(name: &str) -> usize {
@@ -75,6 +77,11 @@ pub fn ascii_art(
 
 pub fn creature_type(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'static str {
     select_art(stage, archetype, name).creature_type
+}
+
+/// pet のテーマ色（ANSI fg escape）。進化/レベルアップ演出用。
+pub fn pet_color(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'static str {
+    select_art(stage, archetype, name).color
 }
 
 /// show 用: 表情変更 + デコレーション + マイクロアニメーション
