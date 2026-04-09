@@ -25,10 +25,11 @@ pub fn run(storage: &Storage) {
     let emoji = pet.emoji();
     let lv = pet.level();
     print!(
-        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger}",
+        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
         name = pet.name,
         mood = pet.mood,
         hunger = pet.hunger,
+        exp = pet.exp,
     );
 }
 

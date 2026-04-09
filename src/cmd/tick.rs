@@ -4,12 +4,20 @@ use crate::pet::Category;
 use crate::storage::{ActivityRecord, Storage};
 use crate::tracker;
 
-pub fn run(storage: &Storage, cmd: Option<&str>, claude_turn: bool) {
+pub fn run(storage: &Storage, cmd: Option<&str>, claude_turn: bool, output_tokens: Option<u64>) {
     let record = if claude_turn {
+        // output_tokens に応じて経験値を変える
+        // 0-100: 1, 100-500: 3, 500-2000: 5, 2000+: 10
+        let exp = match output_tokens.unwrap_or(0) {
+            0..=100 => 1,
+            101..=500 => 3,
+            501..=2000 => 5,
+            _ => 10,
+        };
         ActivityRecord {
             cmd: "--claude-turn".into(),
             cat: Category::Ai,
-            exp: 3,
+            exp,
             ts: Utc::now(),
         }
     } else if let Some(cmd_str) = cmd {
@@ -45,7 +53,7 @@ mod tests {
     #[test]
     fn tick_cmd_appends_activity() {
         let (_dir, storage) = setup();
-        run(&storage, Some("git commit -m fix"), false);
+        run(&storage, Some("git commit -m fix"), false, None);
 
         let content = fs::read_to_string(storage.activity_file()).unwrap();
         let record: ActivityRecord = serde_json::from_str(content.trim()).unwrap();
@@ -57,20 +65,30 @@ mod tests {
     #[test]
     fn tick_claude_turn_records_ai() {
         let (_dir, storage) = setup();
-        run(&storage, None, true);
+        run(&storage, None, true, None);
 
         let content = fs::read_to_string(storage.activity_file()).unwrap();
         let record: ActivityRecord = serde_json::from_str(content.trim()).unwrap();
         assert_eq!(record.cmd, "--claude-turn");
         assert_eq!(record.cat, Category::Ai);
-        assert_eq!(record.exp, 3);
+        assert_eq!(record.exp, 1); // no tokens = minimal exp
     }
 
     #[test]
     fn tick_no_args_does_nothing() {
         let (_dir, storage) = setup();
-        run(&storage, None, false);
+        run(&storage, None, false, None);
 
         assert!(!storage.activity_file().exists());
+    }
+
+    #[test]
+    fn tick_claude_turn_with_high_tokens() {
+        let (_dir, storage) = setup();
+        run(&storage, None, true, Some(3000));
+
+        let content = fs::read_to_string(storage.activity_file()).unwrap();
+        let record: ActivityRecord = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(record.exp, 10); // 2000+ tokens = 10 exp
     }
 }

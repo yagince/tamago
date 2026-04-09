@@ -47,6 +47,9 @@ pub enum Command {
         /// Claude Code ターン記録
         #[arg(long)]
         claude_turn: bool,
+        /// Claude の出力トークン数（経験値計算用）
+        #[arg(long)]
+        output_tokens: Option<u64>,
     },
 }
 
@@ -58,8 +61,10 @@ pub fn run(cli: Cli, storage: Storage) {
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Status) => status::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
-        Some(Command::Tick { cmd, claude_turn }) => {
-            tick::run(&storage, cmd.as_deref(), claude_turn)
-        }
+        Some(Command::Tick {
+            cmd,
+            claude_turn,
+            output_tokens,
+        }) => tick::run(&storage, cmd.as_deref(), claude_turn, output_tokens),
     }
 }
