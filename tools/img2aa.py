@@ -15,6 +15,9 @@ def image_to_halfblock(image_path: str, width: int = 20, threshold: int = 128) -
     """ハーフブロック変換。1文字 = 2ピクセル縦。正方形ピクセル。"""
     img = Image.open(image_path).convert("L")
 
+    # 先に2値化（グレーを除去）
+    img = img.point(lambda p: 0 if p < threshold else 255)
+
     # 余白クロップ
     inv = ImageOps.invert(img)
     bbox = inv.getbbox()
@@ -25,14 +28,16 @@ def image_to_halfblock(image_path: str, width: int = 20, threshold: int = 128) -
     height = round(width * aspect)
     if height % 2 != 0:
         height += 1
-    img = img.resize((width, height), Image.NEAREST)
+    # BOXリサイズ + 再2値化（縮小時のグレー混入を防ぐ）
+    img = img.resize((width, height), Image.BOX)
+    img = img.point(lambda p: 0 if p < 128 else 255)
 
     lines = []
     for y in range(0, height, 2):
         line = []
         for x in range(width):
-            top = img.getpixel((x, y)) < threshold
-            bot = img.getpixel((x, y + 1)) < threshold if y + 1 < height else False
+            top = img.getpixel((x, y)) == 0
+            bot = img.getpixel((x, y + 1)) == 0 if y + 1 < height else False
             if top and bot:
                 line.append("█")
             elif top:
