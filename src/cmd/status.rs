@@ -21,10 +21,14 @@ pub fn run(storage: &Storage) {
 
             if let Ok(activities) = storage.read_and_clear_activities() {
                 let old_stage = pet.stage.clone();
+                let old_level = pet.level();
                 pet.apply_activities(&activities);
                 while pet.try_evolve() {}
                 if pet.stage != old_stage {
                     pet.just_evolved = true;
+                }
+                if pet.level() > old_level {
+                    pet.just_leveled_up = true;
                 }
             }
 
@@ -36,8 +40,8 @@ pub fn run(storage: &Storage) {
     let lv = pet.level();
     let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
 
-    if pet.just_evolved {
-        // 進化演出: halfblock AA をそのまま表示
+    if pet.just_evolved || pet.just_leveled_up {
+        // 進化 or レベルアップ演出: halfblock AA を表示
         // CC statusline は空白を strip するため、空白 ` ` を
         // 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
         let aa = crate::pet::render::ascii_art(
@@ -51,11 +55,13 @@ pub fn run(storage: &Storage) {
         let replaced = aa.replace(' ', "\x1b[30m\u{2588}\x1b[0m");
         print!("{replaced}");
 
+        let prefix = if pet.just_evolved { "🎉" } else { "✨" };
         pet.just_evolved = false;
+        pet.just_leveled_up = false;
         let _ = storage.save_pet(&pet);
 
         print!(
-            "\n🎉 {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
+            "\n{prefix} {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
             name = pet.name,
             mood = pet.mood,
             hunger = pet.hunger,
@@ -111,5 +117,19 @@ mod tests {
         // フラグがクリアされている
         let pet = storage.load_pet().unwrap();
         assert!(!pet.just_evolved);
+    }
+
+    #[test]
+    fn status_clears_leveled_up_flag() {
+        let (_dir, storage) = setup_with_pet();
+
+        let mut pet = storage.load_pet().unwrap();
+        pet.just_leveled_up = true;
+        storage.save_pet(&pet).unwrap();
+
+        run(&storage);
+
+        let pet = storage.load_pet().unwrap();
+        assert!(!pet.just_leveled_up);
     }
 }

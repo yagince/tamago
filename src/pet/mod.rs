@@ -51,6 +51,8 @@ pub struct PetState {
     pub last_active: DateTime<Utc>,
     #[serde(default)]
     pub just_evolved: bool,
+    #[serde(default)]
+    pub just_leveled_up: bool,
 }
 
 impl Stage {
@@ -205,6 +207,7 @@ impl PetState {
             last_fed: now,
             last_active: now,
             just_evolved: false,
+            just_leveled_up: false,
         }
     }
 }
