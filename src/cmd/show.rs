@@ -20,11 +20,13 @@ pub fn run(storage: &Storage) {
     // 進化判定（複数段一気に上がる場合もループ）
     while pet.try_evolve() {}
 
+    pet.just_evolved = pet.stage != old_stage;
+
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
-    if pet.stage != old_stage {
+    if pet.just_evolved {
         print_evolution(&pet);
     }
     print_status(&pet);

@@ -49,6 +49,8 @@ pub struct PetState {
     pub category_exp: HashMap<Category, u64>,
     pub last_fed: DateTime<Utc>,
     pub last_active: DateTime<Utc>,
+    #[serde(default)]
+    pub just_evolved: bool,
 }
 
 impl Stage {
@@ -202,6 +204,7 @@ impl PetState {
             category_exp,
             last_fed: now,
             last_active: now,
+            just_evolved: false,
         }
     }
 }

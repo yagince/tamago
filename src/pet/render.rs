@@ -2,6 +2,7 @@ mod adult;
 mod baby;
 mod child;
 mod egg;
+mod expression;
 mod teen;
 
 use super::{Archetype, Stage};
@@ -15,13 +16,40 @@ fn name_hash(name: &str) -> usize {
     h as usize
 }
 
-pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> String {
+/// hunger/mood の最小値で状態を判定
+#[derive(Debug, PartialEq)]
+pub enum Condition {
+    Normal,    // > 70
+    Tired,     // 30-70
+    Exhausted, // < 30
+}
+
+pub fn condition(hunger: u8, mood: u8) -> Condition {
+    let min = hunger.min(mood);
+    if min < 30 {
+        Condition::Exhausted
+    } else if min <= 70 {
+        Condition::Tired
+    } else {
+        Condition::Normal
+    }
+}
+
+pub fn ascii_art(
+    stage: &Stage,
+    archetype: &Option<Archetype>,
+    name: &str,
+    hunger: u8,
+    mood: u8,
+) -> String {
     let h = name_hash(name);
-    match stage {
-        Stage::Egg => egg::EGG[h % egg::EGG.len()].to_string(),
-        Stage::Baby => baby::BABY[h % baby::BABY.len()].to_string(),
-        Stage::Child => child::CHILD[h % child::CHILD.len()].to_string(),
-        Stage::Teen => teen::TEEN[h % teen::TEEN.len()].to_string(),
+    let cond = condition(hunger, mood);
+
+    let base = match stage {
+        Stage::Egg => egg::EGG[h % egg::EGG.len()],
+        Stage::Baby => baby::BABY[h % baby::BABY.len()],
+        Stage::Child => child::CHILD[h % child::CHILD.len()],
+        Stage::Teen => teen::TEEN[h % teen::TEEN.len()],
         Stage::Adult => {
             let arts = match archetype {
                 Some(Archetype::Versionist) => &adult::ADULT_VERSIONIST[..],
@@ -30,9 +58,11 @@ pub fn ascii_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> St
                 Some(Archetype::AncientMage) => &adult::ADULT_ANCIENT[..],
                 Some(Archetype::Generalist) | None => &adult::ADULT_GENERALIST[..],
             };
-            arts[h % arts.len()].to_string()
+            arts[h % arts.len()]
         }
-    }
+    };
+
+    expression::apply_expression(base, &cond)
 }
 
 #[cfg(test)]
@@ -46,8 +76,8 @@ mod tests {
 
     #[test]
     fn same_name_same_art() {
-        let a = ascii_art(&Stage::Baby, &None, "test1");
-        let b = ascii_art(&Stage::Baby, &None, "test1");
+        let a = ascii_art(&Stage::Baby, &None, "test1", 100, 100);
+        let b = ascii_art(&Stage::Baby, &None, "test1", 100, 100);
         assert_eq!(a, b);
     }
 
@@ -55,7 +85,7 @@ mod tests {
     fn different_name_can_differ() {
         let results: Vec<_> = ["a", "b", "c", "d", "e", "f", "g", "h"]
             .iter()
-            .map(|n| ascii_art(&Stage::Baby, &None, n))
+            .map(|n| ascii_art(&Stage::Baby, &None, n, 100, 100))
             .collect();
         let unique: std::collections::HashSet<_> = results.iter().collect();
         assert!(unique.len() > 1, "全部同じ AA になっている");
@@ -64,25 +94,73 @@ mod tests {
     #[test]
     fn each_stage_renders() {
         let name = "test";
-        assert!(!ascii_art(&Stage::Egg, &None, name).is_empty());
-        assert!(!ascii_art(&Stage::Baby, &None, name).is_empty());
-        assert!(!ascii_art(&Stage::Child, &None, name).is_empty());
-        assert!(!ascii_art(&Stage::Teen, &None, name).is_empty());
-        assert!(!ascii_art(&Stage::Adult, &None, name).is_empty());
+        assert!(!ascii_art(&Stage::Egg, &None, name, 100, 100).is_empty());
+        assert!(!ascii_art(&Stage::Baby, &None, name, 100, 100).is_empty());
+        assert!(!ascii_art(&Stage::Child, &None, name, 100, 100).is_empty());
+        assert!(!ascii_art(&Stage::Teen, &None, name, 100, 100).is_empty());
+        assert!(!ascii_art(&Stage::Adult, &None, name, 100, 100).is_empty());
     }
 
     #[test]
     fn adult_archetypes_show_title() {
-        let art = ascii_art(&Stage::Adult, &Some(Archetype::Versionist), "test");
+        let art = ascii_art(
+            &Stage::Adult,
+            &Some(Archetype::Versionist),
+            "test",
+            100,
+            100,
+        );
         assert!(art.contains("Versionist"));
-        let art = ascii_art(&Stage::Adult, &Some(Archetype::AiMage), "test");
+        let art = ascii_art(&Stage::Adult, &Some(Archetype::AiMage), "test", 100, 100);
         assert!(art.contains("AI Mage"));
-        let art = ascii_art(&Stage::Adult, &Some(Archetype::CloudDweller), "test");
+        let art = ascii_art(
+            &Stage::Adult,
+            &Some(Archetype::CloudDweller),
+            "test",
+            100,
+            100,
+        );
         assert!(art.contains("CloudDweller"));
-        let art = ascii_art(&Stage::Adult, &Some(Archetype::AncientMage), "test");
+        let art = ascii_art(
+            &Stage::Adult,
+            &Some(Archetype::AncientMage),
+            "test",
+            100,
+            100,
+        );
         assert!(art.contains("AncientMage"));
-        let art = ascii_art(&Stage::Adult, &Some(Archetype::Generalist), "test");
+        let art = ascii_art(
+            &Stage::Adult,
+            &Some(Archetype::Generalist),
+            "test",
+            100,
+            100,
+        );
         assert!(art.contains("Generalist"));
+    }
+
+    #[test]
+    fn low_hunger_shows_tired_aa() {
+        let normal = ascii_art(&Stage::Baby, &None, "test", 100, 100);
+        let tired = ascii_art(&Stage::Baby, &None, "test", 50, 100);
+        assert_ne!(normal, tired);
+    }
+
+    #[test]
+    fn very_low_shows_exhausted_aa() {
+        let tired = ascii_art(&Stage::Baby, &None, "test", 50, 100);
+        let exhausted = ascii_art(&Stage::Baby, &None, "test", 10, 100);
+        assert_ne!(tired, exhausted);
+    }
+
+    #[test]
+    fn condition_thresholds() {
+        assert_eq!(condition(100, 100), Condition::Normal);
+        assert_eq!(condition(71, 71), Condition::Normal);
+        assert_eq!(condition(70, 100), Condition::Tired);
+        assert_eq!(condition(100, 50), Condition::Tired);
+        assert_eq!(condition(29, 100), Condition::Exhausted);
+        assert_eq!(condition(100, 0), Condition::Exhausted);
     }
 
     #[test]
@@ -114,12 +192,12 @@ mod tests {
             println!("=== {name} ===");
             for stage in [Stage::Egg, Stage::Baby, Stage::Child, Stage::Teen] {
                 println!("[{stage:?}]");
-                print!("{}", ascii_art(&stage, &None, name));
+                print!("{}", ascii_art(&stage, &None, name, 100, 100));
             }
             println!("[Adult/Generalist]");
             print!(
                 "{}",
-                ascii_art(&Stage::Adult, &Some(Archetype::Generalist), name)
+                ascii_art(&Stage::Adult, &Some(Archetype::Generalist), name, 100, 100)
             );
             println!();
         }
