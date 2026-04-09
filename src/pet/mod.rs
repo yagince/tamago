@@ -49,10 +49,12 @@ pub struct PetState {
     pub category_exp: HashMap<Category, u64>,
     pub last_fed: DateTime<Utc>,
     pub last_active: DateTime<Utc>,
+    /// 進化した時刻。この時刻から一定時間は演出を表示する。
     #[serde(default)]
-    pub just_evolved: bool,
+    pub evolved_at: Option<DateTime<Utc>>,
+    /// レベルアップした時刻。同上。
     #[serde(default)]
-    pub just_leveled_up: bool,
+    pub leveled_up_at: Option<DateTime<Utc>>,
     /// 前回の tick で受け取った累積 output_tokens。差分計算用。
     #[serde(default)]
     pub last_output_tokens: u64,
@@ -209,8 +211,8 @@ impl PetState {
             category_exp,
             last_fed: now,
             last_active: now,
-            just_evolved: false,
-            just_leveled_up: false,
+            evolved_at: None,
+            leveled_up_at: None,
             last_output_tokens: 0,
         }
     }
