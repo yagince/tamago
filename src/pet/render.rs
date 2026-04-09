@@ -84,6 +84,23 @@ pub fn pet_color(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'
     select_art(stage, archetype, name).color
 }
 
+/// AA の本体 (`▀▄█`) にテーマ色、animate 由来のデコ文字（sparkle 類）を
+/// bright yellow で色付けする。空白・改行・英数字はそのまま。
+pub fn colorize_aa(aa: &str, color: &str) -> String {
+    const SPARKLE_COLOR: &str = "\x1b[93m"; // bright yellow
+    const RESET: &str = "\x1b[0m";
+    let mut out = String::new();
+    for ch in aa.chars() {
+        match ch {
+            '▀' | '▄' | '█' => out.push_str(&format!("{color}{ch}{RESET}")),
+            ' ' | '\n' => out.push(ch),
+            _ if ch.is_ascii_alphanumeric() => out.push(ch),
+            _ => out.push_str(&format!("{SPARKLE_COLOR}{ch}{RESET}")),
+        }
+    }
+    out
+}
+
 /// show 用: 表情変更 + デコレーション + マイクロアニメーション
 pub fn animated_art(
     stage: &Stage,

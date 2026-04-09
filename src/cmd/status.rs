@@ -6,31 +6,6 @@ const AGGREGATE_THRESHOLD: u64 = 512;
 /// CC statusline は行頭の空白を strip するため、空白 ` ` を
 /// 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
 const EMPTY: &str = "\x1b[30m\u{2588}\x1b[0m";
-const RESET: &str = "\x1b[0m";
-const SPARKLE_COLOR: &str = "\x1b[93m"; // bright yellow
-
-/// 進化/レベルアップ演出用: animated_art (デコ付き AA) にテーマ色を適用
-fn decorate_evolution_art(aa: &str, color: &str) -> String {
-    let aa = aa.trim_matches('\n');
-    let mut out = String::new();
-    for (i, line) in aa.lines().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
-        for ch in line.chars() {
-            match ch {
-                ' ' => out.push_str(EMPTY),
-                '▀' | '▄' | '█' => out.push_str(&format!("{color}{ch}{RESET}")),
-                // animate 由来のデコ文字（sparkle 類）は黄色でハイライト
-                _ if !ch.is_ascii_alphanumeric() => {
-                    out.push_str(&format!("{SPARKLE_COLOR}{ch}{RESET}"))
-                }
-                _ => out.push(ch),
-            }
-        }
-    }
-    out
-}
 
 
 pub fn run(storage: &Storage) {
@@ -71,6 +46,7 @@ pub fn run(storage: &Storage) {
 
     if pet.just_evolved || pet.just_leveled_up {
         // 進化 or レベルアップ演出: animated_art (sparkle 付き) + テーマ色で表示
+        // 空白は CC statusline の strip を避けるため黒 `█` に置換する
         let aa = crate::pet::render::animated_art(
             &pet.stage,
             &pet.archetype,
@@ -80,7 +56,8 @@ pub fn run(storage: &Storage) {
             pet.exp,
         );
         let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name);
-        let decorated = decorate_evolution_art(&aa, color);
+        let colored = crate::pet::render::colorize_aa(&aa, color);
+        let decorated = colored.trim_matches('\n').replace(' ', EMPTY);
         print!("{decorated}");
 
         let label = if pet.just_evolved {
