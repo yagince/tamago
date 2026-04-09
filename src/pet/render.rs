@@ -94,9 +94,21 @@ mod tests {
     #[test]
     fn print_all_stages_for_visual_check() {
         let names = [
-            "abc", "xyz", "tamago", "pikachu", "moglin", "test123",
-            "hello", "world", "rust", "claude",
-            "ピカボス", "ほげほげ", "これはどうだ？", "モグリン", "フワッチ",
+            "abc",
+            "xyz",
+            "tamago",
+            "pikachu",
+            "moglin",
+            "test123",
+            "hello",
+            "world",
+            "rust",
+            "claude",
+            "ピカボス",
+            "ほげほげ",
+            "これはどうだ？",
+            "モグリン",
+            "フワッチ",
         ];
         for name in names {
             println!("=== {name} ===");

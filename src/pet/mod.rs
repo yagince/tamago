@@ -150,13 +150,31 @@ impl PetState {
         }
     }
 
-    /// 未集計の activity を反映する
+    /// 時間経過による hunger/mood 減衰
+    pub fn apply_decay(&mut self, now: DateTime<Utc>) {
+        let hours_since_active = (now - self.last_active).num_hours().max(0) as u8;
+
+        // hunger: 1時間ごとに -3
+        let hunger_loss = (hours_since_active / 1).saturating_mul(3);
+        self.hunger = self.hunger.saturating_sub(hunger_loss);
+
+        // mood: 2時間ごとに -2
+        let mood_loss = (hours_since_active / 2).saturating_mul(2);
+        self.mood = self.mood.saturating_sub(mood_loss);
+    }
+
+    /// 未集計の activity を反映する（exp + hunger/mood 回復）
     pub fn apply_activities(&mut self, activities: &[crate::storage::ActivityRecord]) {
+        let count = activities.len() as u8;
         for record in activities {
             self.exp += record.exp;
             *self.category_exp.entry(record.cat.clone()).or_insert(0) += record.exp;
             self.last_active = record.ts;
         }
+
+        // コマンド実行で回復: 1コマンドにつき hunger+1, mood+1
+        self.hunger = self.hunger.saturating_add(count).min(100);
+        self.mood = self.mood.saturating_add(count).min(100);
     }
 
     pub fn new(name: impl Into<String>, now: DateTime<Utc>) -> Self {
@@ -349,6 +367,81 @@ mod tests {
     }
 
     #[test]
+    fn decay_hunger_after_1_hour() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        assert_eq!(pet.hunger, 100);
+
+        let later = now + chrono::Duration::hours(1);
+        pet.apply_decay(later);
+        assert_eq!(pet.hunger, 97); // -3 per hour
+    }
+
+    #[test]
+    fn decay_mood_after_2_hours() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        assert_eq!(pet.mood, 100);
+
+        let later = now + chrono::Duration::hours(2);
+        pet.apply_decay(later);
+        assert_eq!(pet.mood, 98); // -2 per 2 hours
+    }
+
+    #[test]
+    fn decay_does_not_go_below_zero() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        let later = now + chrono::Duration::hours(100);
+        pet.apply_decay(later);
+        assert_eq!(pet.hunger, 0);
+        assert_eq!(pet.mood, 0);
+    }
+
+    #[test]
+    fn activities_recover_hunger_and_mood() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 50;
+        pet.mood = 50;
+
+        let activities: Vec<crate::storage::ActivityRecord> = (0..10)
+            .map(|i| crate::storage::ActivityRecord {
+                cmd: format!("cmd{i}"),
+                cat: Category::Dev,
+                exp: 8,
+                ts: now,
+            })
+            .collect();
+
+        pet.apply_activities(&activities);
+        assert!(pet.hunger > 50);
+        assert!(pet.mood > 50);
+    }
+
+    #[test]
+    fn hunger_and_mood_cap_at_100() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 99;
+        pet.mood = 99;
+
+        let activities = vec![
+            crate::storage::ActivityRecord {
+                cmd: "git commit".into(),
+                cat: Category::Git,
+                exp: 20,
+                ts: now,
+            };
+            50
+        ];
+
+        pet.apply_activities(&activities);
+        assert!(pet.hunger <= 100);
+        assert!(pet.mood <= 100);
+    }
+
     fn pet_state_roundtrip_json() {
         let now = Utc::now();
         let pet = PetState::new("クロード", now);

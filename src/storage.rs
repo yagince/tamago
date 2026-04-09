@@ -11,7 +11,7 @@ use crate::pet::{Category, PetState};
 const PET_FILE: &str = "pet.json";
 const ACTIVITY_FILE: &str = "activity.jsonl";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityRecord {
     pub cmd: String,
     pub cat: Category,

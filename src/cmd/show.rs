@@ -11,6 +11,9 @@ pub fn run(storage: &Storage) {
         .read_and_clear_activities()
         .expect("activity の読み込みに失敗しました");
 
+    let now = chrono::Utc::now();
+    pet.apply_decay(now);
+
     let old_stage = pet.stage.clone();
     pet.apply_activities(&activities);
 
