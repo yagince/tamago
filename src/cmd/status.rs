@@ -3,6 +3,7 @@ use crate::storage::Storage;
 /// activity.jsonl がこのサイズ以上なら集計する
 const AGGREGATE_THRESHOLD: u64 = 512;
 
+
 pub fn run(storage: &Storage) {
     let mut pet = match storage.load_pet() {
         Ok(pet) => pet,
@@ -22,15 +23,23 @@ pub fn run(storage: &Storage) {
                 let old_stage = pet.stage.clone();
                 pet.apply_activities(&activities);
                 while pet.try_evolve() {}
-                pet.just_evolved = pet.stage != old_stage;
+                if pet.stage != old_stage {
+                    pet.just_evolved = true;
+                }
             }
 
             let _ = storage.save_pet(&pet);
         }
     }
 
+    let emoji = pet.emoji();
+    let lv = pet.level();
+    let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
+
     if pet.just_evolved {
-        // 進化演出: AA を表示
+        // 進化演出: halfblock AA をそのまま表示
+        // CC statusline は空白を strip するため、空白 ` ` を
+        // 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
         let aa = crate::pet::render::ascii_art(
             &pet.stage,
             &pet.archetype,
@@ -38,22 +47,29 @@ pub fn run(storage: &Storage) {
             pet.hunger,
             pet.mood,
         );
-        print!("{aa}");
+        let aa = aa.trim_matches('\n');
+        let replaced = aa.replace(' ', "\x1b[30m\u{2588}\x1b[0m");
+        print!("{replaced}");
 
-        // フラグをクリアして保存
         pet.just_evolved = false;
         let _ = storage.save_pet(&pet);
-    }
 
-    let emoji = pet.emoji();
-    let lv = pet.level();
-    print!(
-        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
-        name = pet.name,
-        mood = pet.mood,
-        hunger = pet.hunger,
-        exp = pet.exp,
-    );
+        print!(
+            "\n🎉 {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
+            name = pet.name,
+            mood = pet.mood,
+            hunger = pet.hunger,
+            exp = pet.exp,
+        );
+    } else {
+        print!(
+            "{emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
+            name = pet.name,
+            mood = pet.mood,
+            hunger = pet.hunger,
+            exp = pet.exp,
+        );
+    }
 }
 
 #[cfg(test)]
