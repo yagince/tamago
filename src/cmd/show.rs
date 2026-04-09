@@ -60,7 +60,7 @@ fn print_status(pet: &crate::pet::PetState) {
         pet.mood,
         pet.exp,
     );
-    print!("{aa}");
+    println!("{aa}\n");
 
     let emoji = pet.emoji();
     let lv = pet.level();
