@@ -50,7 +50,8 @@ fn print_evolution(pet: &crate::pet::PetState) {
 }
 
 fn print_status(pet: &crate::pet::PetState) {
-    let aa = crate::pet::render::ascii_art(&pet.stage, &pet.archetype, &pet.name);
+    let aa =
+        crate::pet::render::ascii_art(&pet.stage, &pet.archetype, &pet.name, pet.hunger, pet.mood);
     print!("{aa}");
 
     let emoji = pet.emoji();
