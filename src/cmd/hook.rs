@@ -4,6 +4,7 @@ use clap::ValueEnum;
 pub enum Shell {
     Zsh,
     Bash,
+    Statusline,
 }
 
 const ZSH_HOOK: &str = r#"# tamago - terminal pet
@@ -17,10 +18,21 @@ _tamago_preexec() { command tamago tick --cmd "$1" & disown; }
 trap '_tamago_preexec "$BASH_COMMAND"' DEBUG
 "#;
 
+const STATUSLINE_HOOK: &str = r#"# tamago - terminal pet
+tamago tick --claude-turn &
+tamago status
+"#;
+
 pub fn run(shell: &Shell) {
     match shell {
         Shell::Zsh => print!("{ZSH_HOOK}"),
         Shell::Bash => print!("{BASH_HOOK}"),
+        Shell::Statusline => {
+            print!("{STATUSLINE_HOOK}");
+            eprintln!("以下を ~/.claude/statusline.sh に追記してください:");
+            eprintln!();
+            eprintln!("  tamago hook statusline >> ~/.claude/statusline.sh");
+        }
     }
 }
 
@@ -42,5 +54,11 @@ mod tests {
         assert!(BASH_HOOK.contains("trap"));
         assert!(BASH_HOOK.contains("DEBUG"));
         assert!(BASH_HOOK.contains("tamago tick --cmd"));
+    }
+
+    #[test]
+    fn statusline_hook_contains_status() {
+        assert!(STATUSLINE_HOOK.contains("tamago status"));
+        assert!(STATUSLINE_HOOK.contains("tamago tick --claude-turn"));
     }
 }
