@@ -1,4 +1,5 @@
 mod adult;
+mod animate;
 mod baby;
 mod child;
 mod egg;
@@ -63,6 +64,19 @@ pub fn ascii_art(
     };
 
     expression::apply_expression(base, &cond)
+}
+
+/// show 用: 表情変更 + デコレーション + マイクロアニメーション
+pub fn animated_art(
+    stage: &Stage,
+    archetype: &Option<Archetype>,
+    name: &str,
+    hunger: u8,
+    mood: u8,
+    exp: u64,
+) -> String {
+    let base = ascii_art(stage, archetype, name, hunger, mood);
+    animate::animate(&base, hunger, mood, exp)
 }
 
 #[cfg(test)]
