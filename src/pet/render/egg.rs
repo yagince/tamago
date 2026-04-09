@@ -1,6 +1,10 @@
-pub const EGG: &[&str] = &[
+use super::PetArt;
+
+pub const EGG: &[PetArt] = &[
     // にっこり
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
 \n █   ▄    ▄   █\
@@ -8,8 +12,11 @@ pub const EGG: &[&str] = &[
 \n █    ▀▄▄▀    █\
 \n  ▀▄        ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
     // ねむい
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▄▀▀▀▀▄▄\
 \n  ▄        ▄\
 \n ▄          ▄\
@@ -19,8 +26,11 @@ pub const EGG: &[&str] = &[
 \n▀▄          ▄▀\
 \n ▀▄        ▄▀\
 \n   ▀▄▄▄▄▄▄▀\n",
+    },
     // びっくり
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n    ▄█▀▀█▄\
 \n  ▄▀      ▀▄\
 \n ▄▀        ▀▄\
@@ -29,16 +39,22 @@ pub const EGG: &[&str] = &[
 \n█    █  █    █\
 \n ▀▄   ▀▀   ▄▀\
 \n   ▀▄▄▄▄▄▄▀\n",
+    },
     // おこ
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n      ▄▄\
 \n    ▄▀  ▀▄\
 \n   █      █\
 \n   █ ▀  ▀ █\
 \n   █      █\
 \n    ▀▄▄▄▄▀\n",
+    },
     // ウインク
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄█▀▀▀██▄\
 \n  ▄▀      ██▄\
 \n ▄▀        ▀█\
@@ -48,8 +64,11 @@ pub const EGG: &[&str] = &[
 \n▀▄           █\
 \n ▀▄         ▄\
 \n   ▀▄▄▄▄▄▄ ▀\n",
+    },
     // わらい
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n     ▀▀▀█▄\
 \n  ▄▀      ▀▄\
 \n ▄          ▄\
@@ -59,8 +78,11 @@ pub const EGG: &[&str] = &[
 \n█            █\
 \n █          █\
 \n  ▀ ▄▄▄▄▄▄ ▀\n",
+    },
     // きょとん
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
 \n █   ▄    ▄   █\
@@ -68,8 +90,11 @@ pub const EGG: &[&str] = &[
 \n █     ▀▀     █\
 \n  ▀▄        ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
     // むすっ
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
 \n █   ▄    ▄   █\
@@ -77,8 +102,11 @@ pub const EGG: &[&str] = &[
 \n █    ▀▀▀▀    █\
 \n  ▀▄        ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
     // うるうる
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
 \n █  ▄▀   ▀▄   █\
@@ -86,8 +114,11 @@ pub const EGG: &[&str] = &[
 \n █     ▄▄     █\
 \n  ▀▄        ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
     // すやすや
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
 \n █   ▀▀  ▀▀   █\
@@ -95,8 +126,11 @@ pub const EGG: &[&str] = &[
 \n █     ▄▄     █\
 \n  ▀▄      z ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
     // ぷんぷん
-    "\
+    PetArt {
+        creature_type: "???",
+        art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀ ▀▄    ▄▀ ▀▄\
 \n █   ▄    ▄   █\
@@ -104,4 +138,5 @@ pub const EGG: &[&str] = &[
 \n █   ▀▀▀▀▀   █\
 \n  ▀▄        ▄▀\
 \n    ▀▀▄▄▄▄▀▀\n",
+    },
 ];

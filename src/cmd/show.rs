@@ -64,8 +64,9 @@ fn print_status(pet: &crate::pet::PetState) {
 
     let emoji = pet.emoji();
     let lv = pet.level();
+    let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
     println!(
-        "{emoji} {name} Lv.{lv} ♥{mood} 🍚{hunger}  EXP:{exp}",
+        "{emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger}  EXP:{exp}",
         name = pet.name,
         mood = pet.mood,
         hunger = pet.hunger,

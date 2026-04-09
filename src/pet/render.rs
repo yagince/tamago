@@ -8,6 +8,11 @@ mod teen;
 
 use super::{Archetype, Stage};
 
+pub struct PetArt {
+    pub art: &'static str,
+    pub creature_type: &'static str,
+}
+
 fn name_hash(name: &str) -> usize {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in name.bytes() {
@@ -36,6 +41,26 @@ pub fn condition(hunger: u8, mood: u8) -> Condition {
     }
 }
 
+fn select_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'static PetArt {
+    let h = name_hash(name);
+    match stage {
+        Stage::Egg => &egg::EGG[h % egg::EGG.len()],
+        Stage::Baby => &baby::BABY[h % baby::BABY.len()],
+        Stage::Child => &child::CHILD[h % child::CHILD.len()],
+        Stage::Teen => &teen::TEEN[h % teen::TEEN.len()],
+        Stage::Adult => {
+            let arts: &[PetArt] = match archetype {
+                Some(Archetype::Versionist) => &adult::ADULT_VERSIONIST,
+                Some(Archetype::AiMage) => &adult::ADULT_AIMAGE,
+                Some(Archetype::CloudDweller) => &adult::ADULT_CLOUD,
+                Some(Archetype::AncientMage) => &adult::ADULT_ANCIENT,
+                Some(Archetype::Generalist) | None => &adult::ADULT_GENERALIST,
+            };
+            &arts[h % arts.len()]
+        }
+    }
+}
+
 pub fn ascii_art(
     stage: &Stage,
     archetype: &Option<Archetype>,
@@ -43,27 +68,13 @@ pub fn ascii_art(
     hunger: u8,
     mood: u8,
 ) -> String {
-    let h = name_hash(name);
+    let pet_art = select_art(stage, archetype, name);
     let cond = condition(hunger, mood);
+    expression::apply_expression(pet_art.art, &cond)
+}
 
-    let base = match stage {
-        Stage::Egg => egg::EGG[h % egg::EGG.len()],
-        Stage::Baby => baby::BABY[h % baby::BABY.len()],
-        Stage::Child => child::CHILD[h % child::CHILD.len()],
-        Stage::Teen => teen::TEEN[h % teen::TEEN.len()],
-        Stage::Adult => {
-            let arts = match archetype {
-                Some(Archetype::Versionist) => &adult::ADULT_VERSIONIST[..],
-                Some(Archetype::AiMage) => &adult::ADULT_AIMAGE[..],
-                Some(Archetype::CloudDweller) => &adult::ADULT_CLOUD[..],
-                Some(Archetype::AncientMage) => &adult::ADULT_ANCIENT[..],
-                Some(Archetype::Generalist) | None => &adult::ADULT_GENERALIST[..],
-            };
-            arts[h % arts.len()]
-        }
-    };
-
-    expression::apply_expression(base, &cond)
+pub fn creature_type(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'static str {
+    select_art(stage, archetype, name).creature_type
 }
 
 /// show 用: 表情変更 + デコレーション + マイクロアニメーション
