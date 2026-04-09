@@ -58,6 +58,22 @@ pub struct PetState {
     /// 前回の tick で受け取った累積 output_tokens。差分計算用。
     #[serde(default)]
     pub last_output_tokens: u64,
+    /// 前回 decay を計算した時刻。activity の last_active とは独立。
+    #[serde(default)]
+    pub last_decay_at: Option<DateTime<Utc>>,
+}
+
+/// Category 毎の hunger/mood 回復量 (+hunger, +mood)
+fn recovery_for(cat: &Category) -> (u8, u8) {
+    match cat {
+        Category::Git => (1, 1),
+        Category::Dev => (2, 0),
+        Category::Infra => (2, 0),
+        Category::Ai => (0, 2),
+        Category::Editor => (0, 2),
+        Category::Basic => (1, 0),
+        Category::Other => (0, 1),
+    }
 }
 
 impl Stage {
@@ -159,31 +175,65 @@ impl PetState {
         }
     }
 
-    /// 時間経過による hunger/mood 減衰
+    /// 時間経過による hunger/mood 減衰。
+    /// `last_active` とは独立した `last_decay_at` を基準にするため、
+    /// activity が連続しても wall clock で減衰が進む。
+    /// 粒度は 20 分 (hunger -1) / 60 分 (mood -1)。未消費の端数は次回に持ち越す。
     pub fn apply_decay(&mut self, now: DateTime<Utc>) {
-        let hours_since_active = (now - self.last_active).num_hours().max(0) as u8;
+        const HUNGER_CHUNK_MIN: i64 = 20; // -1 per 20 min = -3/h
+        const MOOD_CHUNK_MIN: i64 = 60; // -1 per 60 min = -2 / 2h
 
-        // hunger: 1時間ごとに -3
-        let hunger_loss = (hours_since_active / 1).saturating_mul(3);
-        self.hunger = self.hunger.saturating_sub(hunger_loss);
+        let baseline = self.last_decay_at.unwrap_or(now);
+        let elapsed_min = (now - baseline).num_minutes().max(0);
 
-        // mood: 2時間ごとに -2
-        let mood_loss = (hours_since_active / 2).saturating_mul(2);
-        self.mood = self.mood.saturating_sub(mood_loss);
+        let hunger_chunks = elapsed_min / HUNGER_CHUNK_MIN;
+        let mood_chunks = elapsed_min / MOOD_CHUNK_MIN;
+
+        if hunger_chunks > 0 {
+            let sub = hunger_chunks.min(u8::MAX as i64) as u8;
+            self.hunger = self.hunger.saturating_sub(sub);
+        }
+        if mood_chunks > 0 {
+            let sub = mood_chunks.min(u8::MAX as i64) as u8;
+            self.mood = self.mood.saturating_sub(sub);
+        }
+
+        // 最大粒度 (60min) を消費した分だけ進める。端数は次回へ。
+        // 両方 0 なら進めない（次回まとめて処理）。
+        if mood_chunks > 0 || hunger_chunks > 0 {
+            // 実際に消費した分だけ timestamp を進める
+            let consumed_min = (mood_chunks * MOOD_CHUNK_MIN)
+                .max(hunger_chunks * HUNGER_CHUNK_MIN);
+            self.last_decay_at = Some(baseline + chrono::Duration::minutes(consumed_min));
+        } else if self.last_decay_at.is_none() {
+            // 初回かつ短時間の場合も baseline を確定させる
+            self.last_decay_at = Some(now);
+        }
     }
 
-    /// 未集計の activity を反映する（exp + hunger/mood 回復）
+    /// 未集計の activity を反映する（exp 加算 + カテゴリ別に hunger/mood 回復）。
+    /// コマンドのカテゴリで回復対象が変わる:
+    ///   Git: hunger +1, mood +1（達成感）
+    ///   Dev/Infra: hunger +2（実用）
+    ///   Ai/Editor: mood +2（創造・対話）
+    ///   Basic: hunger +1
+    ///   Other: mood +1
     pub fn apply_activities(&mut self, activities: &[crate::storage::ActivityRecord]) {
-        let count = activities.len() as u8;
+        let mut hunger_gain: u32 = 0;
+        let mut mood_gain: u32 = 0;
+
         for record in activities {
             self.exp += record.exp;
             *self.category_exp.entry(record.cat.clone()).or_insert(0) += record.exp;
             self.last_active = record.ts;
+
+            let (h, m) = recovery_for(&record.cat);
+            hunger_gain += h as u32;
+            mood_gain += m as u32;
         }
 
-        // コマンド実行で回復: 1コマンドにつき hunger+1, mood+1
-        self.hunger = self.hunger.saturating_add(count).min(100);
-        self.mood = self.mood.saturating_add(count).min(100);
+        self.hunger = (self.hunger as u32 + hunger_gain).min(100) as u8;
+        self.mood = (self.mood as u32 + mood_gain).min(100) as u8;
     }
 
     pub fn new(name: impl Into<String>, now: DateTime<Utc>) -> Self {
@@ -214,6 +264,7 @@ impl PetState {
             evolved_at: None,
             leveled_up_at: None,
             last_output_tokens: 0,
+            last_decay_at: Some(now),
         }
     }
 }
@@ -411,25 +462,125 @@ mod tests {
         assert_eq!(pet.mood, 0);
     }
 
+    /// 以前は last_active を基準に decay していたため、activity が続くと
+    /// last_active が常に最新になり decay が一切進まない問題があった。
+    /// 独立した last_decay_at を持ち、活動の有無に関わらず時間経過で減衰する。
     #[test]
-    fn activities_recover_hunger_and_mood() {
+    fn decay_progresses_even_when_activity_is_recent() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        // 3 時間後: 直前まで activity があった想定で last_active を最新に
+        let later = now + chrono::Duration::hours(3);
+        pet.last_active = later;
+
+        pet.apply_decay(later);
+
+        assert!(
+            pet.hunger < 100,
+            "activity が最新でも hunger は減衰するはず: {}",
+            pet.hunger
+        );
+        assert!(
+            pet.mood < 100,
+            "activity が最新でも mood は減衰するはず: {}",
+            pet.mood
+        );
+    }
+
+    #[test]
+    fn git_recovers_both_stats() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
         pet.hunger = 50;
         pet.mood = 50;
 
-        let activities: Vec<crate::storage::ActivityRecord> = (0..10)
-            .map(|i| crate::storage::ActivityRecord {
-                cmd: format!("cmd{i}"),
-                cat: Category::Dev,
-                exp: 8,
-                ts: now,
-            })
-            .collect();
-
+        let activities = vec![crate::storage::ActivityRecord {
+            cmd: "git commit".into(),
+            cat: Category::Git,
+            exp: 20,
+            ts: now,
+        }];
         pet.apply_activities(&activities);
-        assert!(pet.hunger > 50);
-        assert!(pet.mood > 50);
+
+        assert_eq!(pet.hunger, 51);
+        assert_eq!(pet.mood, 51);
+    }
+
+    #[test]
+    fn dev_recovers_hunger_only() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 50;
+        pet.mood = 50;
+
+        let activities = vec![crate::storage::ActivityRecord {
+            cmd: "cargo build".into(),
+            cat: Category::Dev,
+            exp: 8,
+            ts: now,
+        }];
+        pet.apply_activities(&activities);
+
+        assert_eq!(pet.hunger, 52);
+        assert_eq!(pet.mood, 50);
+    }
+
+    #[test]
+    fn ai_recovers_mood_only() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 50;
+        pet.mood = 50;
+
+        let activities = vec![crate::storage::ActivityRecord {
+            cmd: "--claude-turn".into(),
+            cat: Category::Ai,
+            exp: 5,
+            ts: now,
+        }];
+        pet.apply_activities(&activities);
+
+        assert_eq!(pet.hunger, 50);
+        assert_eq!(pet.mood, 52);
+    }
+
+    #[test]
+    fn editor_recovers_mood_only() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 50;
+        pet.mood = 50;
+
+        let activities = vec![crate::storage::ActivityRecord {
+            cmd: "vim src".into(),
+            cat: Category::Editor,
+            exp: 5,
+            ts: now,
+        }];
+        pet.apply_activities(&activities);
+
+        assert_eq!(pet.hunger, 50);
+        assert_eq!(pet.mood, 52);
+    }
+
+    #[test]
+    fn infra_recovers_hunger_only() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.hunger = 50;
+        pet.mood = 50;
+
+        let activities = vec![crate::storage::ActivityRecord {
+            cmd: "kubectl apply".into(),
+            cat: Category::Infra,
+            exp: 8,
+            ts: now,
+        }];
+        pet.apply_activities(&activities);
+
+        assert_eq!(pet.hunger, 52);
+        assert_eq!(pet.mood, 50);
     }
 
     #[test]
