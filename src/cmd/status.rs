@@ -7,8 +7,9 @@ const AGGREGATE_THRESHOLD: u64 = 512;
 /// 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
 const EMPTY: &str = "\x1b[30m\u{2588}\x1b[0m";
 const RESET: &str = "\x1b[0m";
+const SPARKLE_COLOR: &str = "\x1b[93m"; // bright yellow
 
-/// 進化/レベルアップ演出用: AA にテーマ色を適用
+/// 進化/レベルアップ演出用: animated_art (デコ付き AA) にテーマ色を適用
 fn decorate_evolution_art(aa: &str, color: &str) -> String {
     let aa = aa.trim_matches('\n');
     let mut out = String::new();
@@ -20,6 +21,10 @@ fn decorate_evolution_art(aa: &str, color: &str) -> String {
             match ch {
                 ' ' => out.push_str(EMPTY),
                 '▀' | '▄' | '█' => out.push_str(&format!("{color}{ch}{RESET}")),
+                // animate 由来のデコ文字（sparkle 類）は黄色でハイライト
+                _ if !ch.is_ascii_alphanumeric() => {
+                    out.push_str(&format!("{SPARKLE_COLOR}{ch}{RESET}"))
+                }
                 _ => out.push(ch),
             }
         }
@@ -65,17 +70,18 @@ pub fn run(storage: &Storage) {
     let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
 
     if pet.just_evolved || pet.just_leveled_up {
-        // 進化 or レベルアップ演出: halfblock AA をテーマ色 + フレーム付きで表示
-        let aa = crate::pet::render::ascii_art(
+        // 進化 or レベルアップ演出: animated_art (sparkle 付き) + テーマ色で表示
+        let aa = crate::pet::render::animated_art(
             &pet.stage,
             &pet.archetype,
             &pet.name,
             pet.hunger,
             pet.mood,
+            pet.exp,
         );
         let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name);
-        let framed = decorate_evolution_art(&aa, color);
-        print!("{framed}");
+        let decorated = decorate_evolution_art(&aa, color);
+        print!("{decorated}");
 
         let label = if pet.just_evolved {
             "🎉 進化！"

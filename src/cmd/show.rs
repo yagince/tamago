@@ -60,7 +60,9 @@ fn print_status(pet: &crate::pet::PetState) {
         pet.mood,
         pet.exp,
     );
-    println!("{aa}\n");
+    let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name);
+    let colored = colorize_aa(&aa, color);
+    println!("{colored}\n");
 
     let emoji = pet.emoji();
     let lv = pet.level();
@@ -72,6 +74,24 @@ fn print_status(pet: &crate::pet::PetState) {
         hunger = pet.hunger,
         exp = pet.exp,
     );
+}
+
+/// AA の本体 (`▀▄█`) と sparkle デコ文字に色を付ける。
+/// show 用: 空白はそのまま（ターミナル直出力のため strip されない）
+fn colorize_aa(aa: &str, color: &str) -> String {
+    const SPARKLE_COLOR: &str = "\x1b[93m"; // bright yellow
+    const RESET: &str = "\x1b[0m";
+    let mut out = String::new();
+    for ch in aa.chars() {
+        match ch {
+            '▀' | '▄' | '█' => out.push_str(&format!("{color}{ch}{RESET}")),
+            // 空白・改行・英数字はそのまま、それ以外（デコ文字）は yellow
+            ' ' | '\n' => out.push(ch),
+            _ if ch.is_ascii_alphanumeric() => out.push(ch),
+            _ => out.push_str(&format!("{SPARKLE_COLOR}{ch}{RESET}")),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
