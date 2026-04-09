@@ -1,10 +1,33 @@
 use crate::storage::Storage;
 
+/// activity.jsonl がこのサイズ以上なら集計する
+const AGGREGATE_THRESHOLD: u64 = 512;
+
 pub fn run(storage: &Storage) {
     let mut pet = match storage.load_pet() {
         Ok(pet) => pet,
         Err(_) => return,
     };
+
+    // activity が溜まっていたら集計
+    let activity_size = std::fs::metadata(storage.activity_file())
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if activity_size >= AGGREGATE_THRESHOLD {
+        if let Ok(_lock) = storage.lock() {
+            let now = chrono::Utc::now();
+            pet.apply_decay(now);
+
+            if let Ok(activities) = storage.read_and_clear_activities() {
+                let old_stage = pet.stage.clone();
+                pet.apply_activities(&activities);
+                while pet.try_evolve() {}
+                pet.just_evolved = pet.stage != old_stage;
+            }
+
+            let _ = storage.save_pet(&pet);
+        }
+    }
 
     if pet.just_evolved {
         // 進化演出: AA を表示
