@@ -6,18 +6,14 @@ pub struct Score {
 }
 
 /// Claude Code の 1 ターンぶんの経験値を算出する。
-/// output_tokens の量に応じて階段状に配分する。
+/// output_tokens の平方根ベースで連続的にスケール（上限なし）。
+/// 式: `exp = floor(sqrt(tokens) / 12) + 1`
+///
+/// 代表値:
+///   100 → 1, 500 → 2, 1000 → 3, 5000 → 6,
+///   10000 → 9, 25000 → 14, 50000 → 19, 100000 → 27
 pub fn claude_turn_score(output_tokens: u64) -> Score {
-    let exp = match output_tokens {
-        0..=50 => 1,
-        51..=200 => 2,
-        201..=500 => 4,
-        501..=1500 => 7,
-        1501..=4000 => 12,
-        4001..=10000 => 20,
-        10001..=25000 => 35,
-        _ => 50,
-    };
+    let exp = ((output_tokens as f64).sqrt() / 12.0).floor() as u64 + 1;
     Score {
         exp,
         category: Category::Ai,
@@ -191,24 +187,18 @@ mod tests {
     }
 
     #[test]
-    fn claude_turn_tiers() {
+    fn claude_turn_curve() {
+        // exp = floor(sqrt(tokens) / 12) + 1
         let cases = [
             (0, 1),
-            (50, 1),
-            (51, 2),
-            (200, 2),
-            (201, 4),
-            (500, 4),
-            (501, 7),
-            (1500, 7),
-            (1501, 12),
-            (4000, 12),
-            (4001, 20),
-            (10000, 20),
-            (10001, 35),
-            (25000, 35),
-            (25001, 50),
-            (100000, 50),
+            (100, 1),
+            (500, 2),
+            (1000, 3),
+            (5000, 6),
+            (10000, 9),
+            (25000, 14),
+            (50000, 19),
+            (100000, 27),
         ];
         for (tokens, expected) in cases {
             let s = claude_turn_score(tokens);
@@ -218,6 +208,17 @@ mod tests {
                 s.exp
             );
             assert_eq!(s.category, Category::Ai);
+        }
+    }
+
+    #[test]
+    fn claude_turn_monotonic() {
+        // 非減少性を確認
+        let mut prev = 0u64;
+        for tokens in [0, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000] {
+            let e = claude_turn_score(tokens).exp;
+            assert!(e >= prev, "tokens={tokens} exp={e} should be >= {prev}");
+            prev = e;
         }
     }
 }

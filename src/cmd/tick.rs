@@ -82,6 +82,7 @@ mod tests {
 
         let content = fs::read_to_string(storage.activity_file()).unwrap();
         let record: ActivityRecord = serde_json::from_str(content.trim()).unwrap();
-        assert_eq!(record.exp, 12); // 1501..=4000 tokens = 12 exp
+        // sqrt(3000) / 12 = 4.56 → floor = 4, +1 = 5
+        assert_eq!(record.exp, 5);
     }
 }
