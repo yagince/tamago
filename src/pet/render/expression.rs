@@ -169,7 +169,7 @@ fn modify_features(
                 }
 
                 // 目の領域の中央に×を描く
-                let center_x = (min_x + max_x) / 2;
+                let _center_x = (min_x + max_x) / 2;
                 let center_y = (min_y + max_y) / 2;
                 let half_x = (max_x - min_x) / 4 + 1;
                 let half_y = (max_y - min_y) / 4 + 1;

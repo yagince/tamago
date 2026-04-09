@@ -18,11 +18,10 @@ _tamago_preexec() { command tamago tick --cmd "$1" & disown; }
 trap '_tamago_preexec "$BASH_COMMAND"' DEBUG
 "#;
 
-const STATUSLINE_HOOK: &str = r#"
-# tamago - terminal pet
-tamago tick --claude-turn &>/dev/null &
-pet_status=$(tamago status 2>/dev/null)
-"#;
+const STATUSLINE_HOOK: &str = "\
+# tamago - terminal pet\n\
+tamago tick --claude-turn &>/dev/null &\n\
+pet_status=$(tamago status 2>/dev/null)\n";
 
 pub fn run(shell: &Shell) {
     match shell {
