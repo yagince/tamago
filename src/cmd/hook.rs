@@ -18,9 +18,10 @@ _tamago_preexec() { command tamago tick --cmd "$1" & disown; }
 trap '_tamago_preexec "$BASH_COMMAND"' DEBUG
 "#;
 
-const STATUSLINE_HOOK: &str = r#"# tamago - terminal pet
-tamago tick --claude-turn &
-tamago status
+const STATUSLINE_HOOK: &str = r#"
+# tamago - terminal pet
+tamago tick --claude-turn &>/dev/null &
+pet_status=$(tamago status 2>/dev/null)
 "#;
 
 pub fn run(shell: &Shell) {
@@ -29,9 +30,11 @@ pub fn run(shell: &Shell) {
         Shell::Bash => print!("{BASH_HOOK}"),
         Shell::Statusline => {
             print!("{STATUSLINE_HOOK}");
-            eprintln!("以下を ~/.claude/statusline.sh に追記してください:");
+            eprintln!("~/.claude/statusline-command.sh に以下を追記してください:");
             eprintln!();
-            eprintln!("  tamago hook statusline >> ~/.claude/statusline.sh");
+            eprintln!("  1. tamago hook statusline >> ~/.claude/statusline-command.sh");
+            eprintln!("  2. printf の出力に $pet_status を追加");
+            eprintln!("     例: printf '... %s' \"$pet_status\"");
         }
     }
 }
