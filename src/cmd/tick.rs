@@ -5,7 +5,13 @@ use crate::tracker;
 
 pub fn run(storage: &Storage, cmd: Option<&str>, claude_turn: bool, output_tokens: Option<u64>) {
     let record = if claude_turn {
-        let score = tracker::claude_turn_score(output_tokens.unwrap_or(0));
+        // output_tokens は Claude Code の累積値なので、前回値との差分を使う
+        let total = output_tokens.unwrap_or(0);
+        let last = storage.read_last_output_tokens();
+        let delta = total.saturating_sub(last);
+        // 次回のために最新値を保存
+        let _ = storage.write_last_output_tokens(total);
+        let score = tracker::claude_turn_score(delta);
         ActivityRecord {
             cmd: "--claude-turn".into(),
             cat: score.category,
@@ -82,7 +88,38 @@ mod tests {
 
         let content = fs::read_to_string(storage.activity_file()).unwrap();
         let record: ActivityRecord = serde_json::from_str(content.trim()).unwrap();
-        // sqrt(3000) / 12 = 4.56 → floor = 4, +1 = 5
+        // 初回は delta = 3000 - 0 = 3000 → sqrt(3000)/12 = 4.56 → 4 + 1 = 5
         assert_eq!(record.exp, 5);
+    }
+
+    #[test]
+    fn tick_claude_turn_uses_delta_not_cumulative() {
+        let (_dir, storage) = setup();
+        // 1 回目: 累積 10000 → delta = 10000 → sqrt(10000)/12 = 8.33 → 8+1 = 9 exp
+        run(&storage, None, true, Some(10000));
+        // 2 回目: 累積 12500 → delta = 2500 → sqrt(2500)/12 = 4.16 → 4+1 = 5 exp
+        run(&storage, None, true, Some(12500));
+
+        let content = fs::read_to_string(storage.activity_file()).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let first: ActivityRecord = serde_json::from_str(lines[0]).unwrap();
+        let second: ActivityRecord = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(first.exp, 9);
+        assert_eq!(second.exp, 5);
+    }
+
+    #[test]
+    fn tick_claude_turn_handles_token_reset() {
+        let (_dir, storage) = setup();
+        // 累積が減った場合（セッションリセット）は delta = 0 として扱う
+        run(&storage, None, true, Some(50000));
+        run(&storage, None, true, Some(1000));
+
+        let content = fs::read_to_string(storage.activity_file()).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        let second: ActivityRecord = serde_json::from_str(lines[1]).unwrap();
+        // delta = 0 → sqrt(0)/12 = 0 → 0+1 = 1 exp
+        assert_eq!(second.exp, 1);
     }
 }
