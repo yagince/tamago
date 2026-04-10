@@ -928,7 +928,7 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
         .unwrap_or(1)
         .max(1) as usize;
 
-    let mut lines = vec![
+    let lines = vec![
         Line::from(vec![Span::styled(
             &pet.name,
             Style::default().fg(Color::White).bold(),
@@ -952,109 +952,63 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
                 Style::default().fg(Color::LightCyan).bold(),
             ),
         ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("♥  HP   ", Style::default().fg(Color::LightRed).bold()),
-            stat_bar(
-                pet.hunger as usize,
-                100,
-                Color::Green,
-                Color::Yellow,
-                Color::Red,
-            ),
-            Span::styled(
-                format!(" {}", pet.hunger),
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("💙 MP   ", Style::default().fg(Color::LightBlue).bold()),
-            stat_bar(
-                pet.mood as usize,
-                100,
-                Color::Blue,
-                Color::Magenta,
-                Color::Red,
-            ),
-            Span::styled(format!(" {}", pet.mood), Style::default().fg(Color::White)),
-        ]),
-        Line::from(vec![
-            Span::styled("⚡ 開発  ", Style::default().fg(Color::Yellow).bold()),
-            stat_bar(
-                pet.dev_power as usize,
-                stat_max,
-                Color::Yellow,
-                Color::Yellow,
-                Color::Yellow,
-            ),
-            Span::styled(
-                format!(" {}", pet.dev_power),
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("📚 賢さ  ", Style::default().fg(Color::Cyan).bold()),
-            stat_bar(
-                pet.wisdom as usize,
-                stat_max,
-                Color::Cyan,
-                Color::Cyan,
-                Color::Cyan,
-            ),
-            Span::styled(
-                format!(" {}", pet.wisdom),
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("😆 笑い  ", Style::default().fg(Color::Green).bold()),
-            stat_bar(
-                pet.humor as usize,
-                stat_max,
-                Color::Green,
-                Color::Green,
-                Color::Green,
-            ),
-            Span::styled(format!(" {}", pet.humor), Style::default().fg(Color::White)),
-        ]),
-        Line::from(vec![
-            Span::styled("🌀 混沌  ", Style::default().fg(Color::Magenta).bold()),
-            stat_bar(
-                pet.chaos as usize,
-                stat_max,
-                Color::Magenta,
-                Color::Magenta,
-                Color::Magenta,
-            ),
-            Span::styled(format!(" {}", pet.chaos), Style::default().fg(Color::White)),
-        ]),
     ];
 
-    if !pet.personality.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled("💬 ", Style::default().fg(Color::Yellow)),
-            Span::styled(&pet.personality, Style::default().fg(Color::White).italic()),
-        ]));
+    f.render_widget(Paragraph::new(lines), inner);
+
+    // ステータスバーを Layout で描画（ラベル幅を固定してズレ防止）
+    let stats_y = inner.y + 6; // Paragraph の下（name+type+空+Lv+EXP+空 = 6行）
+    let stat_rows: &[(&str, usize, usize, Color, Color, Color)] = &[
+        ("HP", pet.hunger as usize, 100, Color::Green, Color::Yellow, Color::Red),
+        ("MP", pet.mood as usize, 100, Color::Blue, Color::Magenta, Color::Red),
+        ("開発", pet.dev_power as usize, stat_max, Color::Yellow, Color::Yellow, Color::Yellow),
+        ("賢さ", pet.wisdom as usize, stat_max, Color::Cyan, Color::Cyan, Color::Cyan),
+        ("笑い", pet.humor as usize, stat_max, Color::Green, Color::Green, Color::Green),
+        ("混沌", pet.chaos as usize, stat_max, Color::Magenta, Color::Magenta, Color::Magenta),
+    ];
+
+    for (i, (label, val, max, high, mid, low)) in stat_rows.iter().enumerate() {
+        let y = stats_y + i as u16;
+        if y >= inner.y + inner.height {
+            break;
+        }
+        // ラベル（固定 6 セル）
+        let label_area = Rect::new(inner.x, y, 6, 1);
+        f.render_widget(
+            Paragraph::new(*label).style(Style::default().fg(*high).bold()),
+            label_area,
+        );
+        // バー
+        let bar_area = Rect::new(inner.x + 6, y, inner.width.saturating_sub(12), 1);
+        let ratio = if *max > 0 { *val as f64 / *max as f64 } else { 0.0 };
+        let pct = (*val * 100).checked_div(*max).unwrap_or(0);
+        let color = if pct > 50 { *high } else if pct > 25 { *mid } else { *low };
+        f.render_widget(
+            Gauge::default()
+                .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
+                .ratio(ratio.min(1.0))
+                .label(""),
+            bar_area,
+        );
+        // 数値
+        let val_area = Rect::new(inner.x + inner.width - 5, y, 5, 1);
+        f.render_widget(
+            Paragraph::new(format!("{:>4}", val)).alignment(Alignment::Right),
+            val_area,
+        );
     }
 
-    f.render_widget(Paragraph::new(lines), inner);
+    // 性格テキスト
+    let personality_y = stats_y + stat_rows.len() as u16 + 1;
+    if !pet.personality.is_empty() && personality_y < inner.y + inner.height {
+        f.render_widget(
+            Paragraph::new(format!("💬 {}", pet.personality))
+                .style(Style::default().fg(Color::White).italic()),
+            Rect::new(inner.x, personality_y, inner.width, 1),
+        );
+    }
 }
 
-fn stat_bar(val: usize, max: usize, high: Color, mid: Color, low: Color) -> Span<'static> {
-    let ratio = if max > 0 { val * 10 / max } else { 0 };
-    let filled = ratio.min(10);
-    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
-    let pct = if max > 0 { val * 100 / max } else { 0 };
-    let color = if pct > 50 {
-        high
-    } else if pct > 25 {
-        mid
-    } else {
-        low
-    };
-    Span::styled(bar, Style::default().fg(color))
-}
 
 fn draw_category_bars(f: &mut Frame, area: Rect, pet: &PetState) {
     let block = Block::default()
