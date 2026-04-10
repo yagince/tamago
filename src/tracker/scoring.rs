@@ -39,6 +39,7 @@ pub fn score(cmd: &str) -> Score {
     match name {
         "git" => {
             let bonus = match sub {
+                "rebase" => 40,
                 "commit" | "ci" => 10,
                 "push" => 8,
                 "status" | "st" => 3,
