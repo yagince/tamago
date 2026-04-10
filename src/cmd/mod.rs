@@ -3,6 +3,7 @@ pub(crate) mod init;
 mod name;
 mod reset;
 mod show;
+mod show_tui;
 mod skill;
 mod status;
 mod tick;
@@ -30,6 +31,8 @@ pub enum Command {
         #[arg(long)]
         ai: bool,
     },
+    /// ドラクエ風ステータス画面で表示
+    Show,
     /// データをリセットして初期化しなおす
     Reset,
     /// statusline 用ワンライナー
@@ -64,6 +67,7 @@ pub fn run(cli: Cli, storage: Storage) {
         None => show::run(&storage),
         Some(Command::Init) => init::run(&storage),
         Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai),
+        Some(Command::Show) => show_tui::run(&storage),
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Status) => status::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
