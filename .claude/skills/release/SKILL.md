@@ -3,16 +3,14 @@ name: release
 description: >
   Semantic versioning release workflow for tamago using cargo-release.
   Analyzes git diff since last tag, proposes version bump (patch/minor/major),
-  confirms with user via AskUserQuestion, then runs cargo release to tag and push.
-  GitHub Actions release.yml handles artifact builds automatically on tag push.
+  confirms with user via AskUserQuestion, then tags, pushes, waits for CI,
+  and updates the Homebrew formula.
   Triggers: "release", "リリース", "バージョン上げて", "version bump", "tag"
 ---
 
 # Release Workflow
 
 ## Step 1: Analyze Changes
-
-Determine the last release tag and diff:
 
 ```bash
 git describe --tags --abbrev=0 2>/dev/null || echo "none"
@@ -21,47 +19,65 @@ git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-paren
 
 ## Step 2: Propose Version
 
-Classify changes by commit messages:
-- **major**: breaking changes (`BREAKING`, incompatible API change)
-- **minor**: new features (`feat:`)
-- **patch**: bug fixes, refactors, chores (`fix:`, `refactor:`, `chore:`)
+Classify commits: `feat:` → minor, `fix:/refactor:/chore:` → patch, `BREAKING` → major.
 
-Read the current version from Cargo.toml. Calculate the proposed next version.
-
-Use **AskUserQuestion** to confirm:
-- Show the diff summary (commit list)
-- Propose the version bump level and new version number
-- Let the user choose: proposed version, or override
+Use **AskUserQuestion** to confirm version with diff summary.
 
 ## Step 3: Execute Release
 
+If version differs from Cargo.toml:
 ```bash
 cargo release <level> --no-publish --execute
 ```
 
-Where `<level>` is `patch`, `minor`, or `major`.
+If version matches Cargo.toml (e.g. first release):
+```bash
+git tag v<version>
+git push origin main --tags
+```
 
-This will:
-1. Bump version in Cargo.toml
-2. Commit the version change
-3. Create git tag `v<new_version>`
-4. Push commit and tag to remote
+## Step 4: Wait for CI
 
-## Step 4: Verify
-
-After push, the tag triggers `.github/workflows/release.yml` which:
-- Builds 4 platform binaries (macOS arm64/x86_64, Linux musl x86_64/aarch64)
-- Creates GitHub Release with artifacts and checksums
-
-Check the workflow status:
+Poll until the release workflow completes:
 ```bash
 gh run list --workflow=release.yml --limit=1
 ```
 
-Report the release URL to the user.
+Repeat every 15 seconds until status is `completed`. Report failure if it fails.
+
+## Step 5: Update Homebrew Formula
+
+After CI creates the GitHub Release with artifacts:
+
+1. Download SHA256 checksums:
+```bash
+VERSION=<new_version>
+ARM_MAC_SHA=$(gh release download v$VERSION --pattern "*aarch64-apple-darwin*.sha256" --output - | awk '{print $1}')
+X86_MAC_SHA=$(gh release download v$VERSION --pattern "*x86_64-apple-darwin*.sha256" --output - | awk '{print $1}')
+ARM_LINUX_SHA=$(gh release download v$VERSION --pattern "*aarch64-unknown-linux-musl*.sha256" --output - | awk '{print $1}')
+X86_LINUX_SHA=$(gh release download v$VERSION --pattern "*x86_64-unknown-linux-musl*.sha256" --output - | awk '{print $1}')
+```
+
+2. Update `Formula/tamago.rb` in the homebrew-tamago repo at `../homebrew-tamago/`:
+   - Update `version` to new version
+   - Update all 4 `sha256` values
+
+3. Commit and push:
+```bash
+cd ../homebrew-tamago
+git add Formula/tamago.rb
+git commit -m "update tamago to v$VERSION"
+git push origin main
+```
+
+## Step 6: Report
+
+Print:
+- GitHub Release URL: `https://github.com/yagince/tamago/releases/tag/v<version>`
+- Homebrew install command: `brew tap yagince/tamago && brew install tamago`
 
 ## Notes
 
-- `publish = false` in Cargo.toml, so crates.io publish is skipped
-- First release will have no previous tag; use all commits since init
-- Always use `--no-publish` flag with cargo release
+- `publish = false` — crates.io publish is skipped
+- Homebrew repo: `../homebrew-tamago/` (sibling directory)
+- Always use `--no-publish` with cargo release
