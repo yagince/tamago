@@ -91,8 +91,8 @@ fn print_category_bars(pet: &crate::pet::PetState) {
     let cats: &[(Category, &str, &str, &str)] = &[
         (Category::Git, "Git  ", "🔀", "\x1b[96m"),   // bright cyan
         (Category::Ai, "AI   ", "🧠", "\x1b[95m"),    // bright magenta
-        (Category::Dev, "Dev  ", "🛠️", "\x1b[92m"),   // bright green
-        (Category::Infra, "Infra", "☁️", "\x1b[94m"), // bright blue
+        (Category::Dev, "Dev  ", "🔧", "\x1b[92m"),    // bright green
+        (Category::Infra, "Infra", "🌐", "\x1b[94m"), // bright blue
         (Category::Editor, "Edit ", "📝", "\x1b[93m"), // bright yellow
         (Category::Basic, "Basic", "🐚", "\x1b[97m"), // bright white
         (Category::Other, "Other", "✨", "\x1b[90m"), // bright black (gray)
