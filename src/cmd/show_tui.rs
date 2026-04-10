@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -9,12 +10,20 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::{BorderType, Block, Borders, Gauge, Padding, Paragraph};
 
+use chrono::Timelike;
+use unicode_width::UnicodeWidthStr;
+
 use crate::pet::{Category, PetState, Stage};
-use crate::storage::Storage;
+use crate::storage::{ActivityRecord, Storage};
 
 const TICK_MS: u64 = 120;
+const MESSAGE_DISPLAY_FRAMES: u64 = 83; // ~10秒 (120ms/frame)
 
-pub fn run(storage: &Storage) {
+fn frame_hash(frame: u64, salt: u64) -> u64 {
+    frame.wrapping_add(salt).wrapping_mul(2654435761) >> 16
+}
+
+pub fn run(storage: &Storage, message_interval_secs: u64) {
     let _lock = storage.lock().expect("ロックの取得に失敗しました");
     let mut pet = storage
         .load_pet()
@@ -40,7 +49,7 @@ pub fn run(storage: &Storage) {
 
     drop(_lock);
 
-    if let Err(e) = run_tui(storage, &pet) {
+    if let Err(e) = run_tui(storage, &pet, message_interval_secs) {
         eprintln!("TUI エラー: {e}");
     }
 }
@@ -81,7 +90,7 @@ fn build_aa(pet: &PetState) -> (Vec<String>, i16, i16) {
     (lines, w, h)
 }
 
-fn run_tui(storage: &Storage, initial_pet: &PetState) -> io::Result<()> {
+fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64) -> io::Result<()> {
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
 
@@ -92,9 +101,49 @@ fn run_tui(storage: &Storage, initial_pet: &PetState) -> io::Result<()> {
     let mut state = AnimState::new(aa_w, aa_h, pet.hunger, pet.mood);
     let mut last_tick = Instant::now();
     let mut last_reload = Instant::now();
+    let message_interval = Duration::from_secs(message_interval_secs);
+    let mut last_message = Instant::now() - message_interval; // 初回すぐ発火
+    let use_claude = has_claude_cli();
+    let (claude_tx, claude_rx) = mpsc::channel::<String>();
+    // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
+    let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
 
     loop {
+        // Claude からの非同期セリフを受信
+        if let Ok(msg) = claude_rx.try_recv() {
+            state.message = Some(msg);
+            state.message_timer = MESSAGE_DISPLAY_FRAMES;
+        }
+
+        // セリフ更新
+        if last_message.elapsed() >= message_interval {
+            let activity = recent_activities.first();
+
+            // まずフォールバックを即時表示
+            let msg = generate_message(activity, &pet, state.frame);
+            state.message = Some(msg);
+            state.message_timer = MESSAGE_DISPLAY_FRAMES;
+
+            // Claude CLI がある場合は非同期で上書きを試みる
+            if use_claude && !recent_activities.is_empty() {
+                let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
+                try_claude_message(
+                    &pet.name,
+                    pet.level(),
+                    &cmds,
+                    claude_tx.clone(),
+                );
+            }
+
+            last_message = Instant::now();
+        }
+
         if last_reload.elapsed() >= RELOAD_INTERVAL {
+            // reload 前に直近 activity を保持
+            let peeked = storage.peek_latest_activities(5);
+            if !peeked.is_empty() {
+                recent_activities = peeked;
+            }
             if let Some(new_pet) = reload_pet(storage) {
                 let changed = new_pet.exp != pet.exp
                     || new_pet.hunger != pet.hunger
@@ -172,11 +221,12 @@ struct AnimState {
     // 移動パターン
     phase: MovePhase,
     phase_timer: u64,
-    // ステータス
     hunger: u8,
     mood: u8,
-    // スパークル
     sparkles: Vec<(i16, i16, char)>,
+    // セリフ
+    message: Option<String>,
+    message_timer: u64,
 }
 
 impl AnimState {
@@ -197,6 +247,8 @@ impl AnimState {
             hunger,
             mood,
             sparkles: Vec::new(),
+            message: None,
+            message_timer: 0,
         }
     }
 
@@ -267,11 +319,18 @@ impl AnimState {
         }
 
         self.update_sparkles();
+
+        // セリフタイマー
+        if self.message_timer > 0 {
+            self.message_timer -= 1;
+            if self.message_timer == 0 {
+                self.message = None;
+            }
+        }
     }
 
-    /// frame ベースの簡易ハッシュ（決定的だが偏りにくい）
     fn hash(&self, salt: u64) -> u64 {
-        self.frame.wrapping_add(salt).wrapping_mul(2654435761) >> 16
+        frame_hash(self.frame, salt)
     }
 
     /// 現在位置から目標地点への方向を設定。壁際にいるときは反対方向を優先。
@@ -398,6 +457,95 @@ fn apply_blink(lines: &[String]) -> Vec<String> {
     result
 }
 
+// ── Speech ───────────────────────────────────────────────────
+
+fn pick_message(candidates: &[&str], frame: u64) -> String {
+    let idx = frame_hash(frame, 37) as usize % candidates.len();
+    candidates[idx].to_string()
+}
+
+fn generate_message(
+    activity: Option<&ActivityRecord>,
+    pet: &PetState,
+    frame: u64,
+) -> String {
+    if let Some(record) = activity {
+        let candidates: &[&str] = match record.cat {
+            Category::Git => &[
+                "おつかれ！", "またひとつ積み上げたね", "えいっ！送信！",
+                "git 使いこなしてるね", "ふむふむ",
+            ],
+            Category::Ai => &["ふむふむ...", "なるほどね", "考え中...", "仲間が来た！"],
+            Category::Dev => &["ガチャガチャ...できた？", "ドキドキ", "Rust だね！", "かっこいい"],
+            Category::Infra => &["コンテナの中は広いなぁ", "☁", "デプロイ！"],
+            Category::Editor => &["書いてる書いてる", "集中してるね"],
+            Category::Basic => &["ふーん", "...", "♪"],
+            Category::Other => &["ふーん", "なにしてるの？", "♪"],
+        };
+        return pick_message(candidates, frame);
+    }
+
+    if pet.hunger < 20 {
+        return pick_message(&["おなかすいた...", "なにか食べたい...", "ぐぅ..."], frame);
+    }
+    if pet.mood < 20 {
+        return pick_message(&["さみしい...", "かまって...", "しょんぼり"], frame);
+    }
+
+    let hour = chrono::Local::now().hour();
+    if hour < 5 {
+        return pick_message(&["まだ起きてるの？", "zzz...", "ねむい..."], frame);
+    }
+
+    pick_message(&["...", "♪", "〜", "ふふっ", "いい天気だね"], frame)
+}
+
+fn try_claude_message(
+    pet_name: &str,
+    level: u64,
+    cmds: &[&str],
+    tx: mpsc::Sender<String>,
+) {
+    let cmd_list = cmds.join(", ");
+    let system = format!(
+        "あなたは「{}」という名前のLv.{}のターミナルペットです。\
+        求められたセリフだけを出力してください。説明や補足は不要です。",
+        pet_name, level
+    );
+    let prompt = format!(
+        "ユーザーの直近のコマンド: {}。20文字以内で一言リアクション。",
+        cmd_list
+    );
+    std::thread::spawn(move || {
+        let output = std::process::Command::new("timeout")
+            .args([
+                "15", "claude", "-p", &prompt,
+                "--model", "sonnet",
+                "--system-prompt", &system,
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output();
+        if let Ok(out) = output {
+            // timeout で kill されても stdout にデータがあれば使う
+            let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !msg.is_empty() && msg.chars().count() <= 30 {
+                let _ = tx.send(msg);
+            }
+        }
+    });
+}
+
+fn has_claude_cli() -> bool {
+    std::process::Command::new("which")
+        .arg("claude")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 // ── AA flip ──────────────────────────────────────────────────
 
 fn flip_line(line: &str) -> String {
@@ -496,6 +644,35 @@ fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimStat
                 Paragraph::new(z).style(Style::default().fg(Color::Cyan)),
                 Rect::new(zx, zy, 1, 1),
             );
+        }
+    }
+
+    // 吹き出し
+    if let Some(ref msg) = state.message {
+        let inner_w = UnicodeWidthStr::width(msg.as_str()); // 表示幅（全角=2）
+        let bubble_w = inner_w + 4; // "│ " + msg + " │"
+        let pet_center_x = inner.x + state.x as u16 + state.aa_w as u16 / 2;
+        let bx = pet_center_x.saturating_sub(bubble_w as u16 / 2);
+        // 右端に収まるよう clamp
+        let bx = bx.min((inner.x + inner.width).saturating_sub(bubble_w as u16));
+        let by = (inner.y + state.y as u16).saturating_sub(3);
+
+        if by >= inner.y {
+            let bar = "─".repeat(inner_w + 2);
+            let top = format!("╭{bar}╮");
+            let mid = format!("│ {msg} │");
+            let bot = format!("╰{bar}╯");
+
+            for (i, line) in [top, mid, bot].iter().enumerate() {
+                let ly = by + i as u16;
+                if ly < inner.y + inner.height {
+                    f.render_widget(
+                        Paragraph::new(line.as_str())
+                            .style(Style::default().fg(Color::White)),
+                        Rect::new(bx, ly, bubble_w as u16, 1),
+                    );
+                }
+            }
         }
     }
 

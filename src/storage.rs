@@ -126,6 +126,30 @@ impl Storage {
         Ok(records)
     }
 
+    /// activity.jsonl の末尾 n 件を読む（クリアしない、ロックしない）。
+    /// ファイル末尾の最大 4KB だけ読んで parse する。
+    pub fn peek_latest_activities(&self, n: usize) -> Vec<ActivityRecord> {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let path = self.activity_file();
+        let mut file = match std::fs::File::open(&path) {
+            Ok(f) => f,
+            Err(_) => return vec![],
+        };
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let tail_size = 4096u64.min(len);
+        let _ = file.seek(SeekFrom::End(-(tail_size as i64)));
+        let mut buf = String::new();
+        let _ = file.read_to_string(&mut buf);
+
+        buf.lines()
+            .rev()
+            .filter(|l| !l.is_empty())
+            .take(n)
+            .filter_map(|l| serde_json::from_str::<ActivityRecord>(l).ok())
+            .collect()
+    }
+
     fn lock_file(&self) -> PathBuf {
         self.base_dir.join(".lock")
     }

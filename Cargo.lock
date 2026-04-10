@@ -1482,6 +1482,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "unicode-width",
 ]
 
 [[package]]

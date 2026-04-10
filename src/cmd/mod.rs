@@ -32,7 +32,11 @@ pub enum Command {
         ai: bool,
     },
     /// ドラクエ風ステータス画面で表示
-    Show,
+    Show {
+        /// セリフの更新間隔（秒）
+        #[arg(long, default_value = "30")]
+        message_interval: u64,
+    },
     /// データをリセットして初期化しなおす
     Reset,
     /// statusline 用ワンライナー
@@ -67,7 +71,7 @@ pub fn run(cli: Cli, storage: Storage) {
         None => show::run(&storage),
         Some(Command::Init) => init::run(&storage),
         Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai),
-        Some(Command::Show) => show_tui::run(&storage),
+        Some(Command::Show { message_interval }) => show_tui::run(&storage, message_interval),
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Status) => status::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
