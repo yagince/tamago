@@ -115,14 +115,26 @@ impl Stage {
 }
 
 impl PetState {
+    /// 連続レベル。各 stage 内で 1-99 進み、進化後もそのまま続く。
+    /// Egg: 1-99 / Baby: 100-198 / Child: 199-297 / Teen: 298-396 / Adult: 397-495
     pub fn level(&self) -> u64 {
+        let stage_offset: u64 = match self.stage {
+            Stage::Egg => 0,
+            Stage::Baby => 99,
+            Stage::Child => 99 * 2,
+            Stage::Teen => 99 * 3,
+            Stage::Adult => 99 * 4,
+        };
+
         let base = self.stage.exp_threshold();
-        let range = self.stage.next_threshold() - base;
-        if range == 0 {
-            return 1;
-        }
-        let progress = self.exp.saturating_sub(base);
-        (progress * 99 / range).min(99) + 1
+        let range = self.stage.next_threshold().saturating_sub(base);
+        let within = if range == 0 {
+            99
+        } else {
+            let progress = self.exp.saturating_sub(base);
+            ((progress * 99 / range).min(99) + 1) as u64
+        };
+        stage_offset + within
     }
 
     pub fn emoji(&self) -> &'static str {
@@ -341,11 +353,55 @@ mod tests {
 
         pet.exp = 2500;
         assert!(pet.level() > 1);
-        assert!(pet.level() <= 100);
 
         // exp が閾値を超えてもクラッシュしない
         pet.exp = 999_999;
         assert!(pet.level() >= 1);
+    }
+
+    /// 進化してもレベルはリセットされず連続する
+    #[test]
+    fn level_does_not_reset_on_evolution() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        // Egg 末期 (Lv.99 相当)
+        pet.exp = 4999;
+        let before = pet.level();
+        assert_eq!(before, 99);
+
+        // Baby へ進化
+        pet.exp = 5000;
+        assert!(pet.try_evolve());
+        assert_eq!(pet.stage, Stage::Baby);
+
+        // レベルはリセットされず、連続して上がる
+        let after = pet.level();
+        assert!(
+            after > before,
+            "進化後のレベル({after})は進化前({before})以上でなければならない"
+        );
+        assert_eq!(after, 100);
+    }
+
+    #[test]
+    fn level_monotonic_across_stages() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        let mut prev = pet.level();
+        // exp を徐々に増やしながら試す
+        for exp in (0..=300_000u64).step_by(500) {
+            pet.exp = exp;
+            while pet.try_evolve() {}
+            let lv = pet.level();
+            assert!(
+                lv >= prev,
+                "level が減少した: exp={exp} stage={:?} lv={lv} prev={prev}",
+                pet.stage
+            );
+            prev = lv;
+        }
     }
 
     #[test]
