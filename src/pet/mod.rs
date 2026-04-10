@@ -372,44 +372,15 @@ impl PetState {
             .map(|(k, v)| format!("{:?}:{}", k, v))
             .collect();
 
-        let system = format!(
-            "あなたはターミナルペットの性格設定を生成するAIです。\
-            求められた性格テキストだけを出力してください。説明や補足は不要です。"
-        );
-        let prompt = format!(
+        crate::claude::ClaudeRequest::new(format!(
             "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
             このペットの性格を30文字以内で。",
-            self.name,
-            self.level(),
-            self.dev_power,
-            self.wisdom,
-            self.humor,
-            self.chaos,
+            self.name, self.level(), self.dev_power, self.wisdom, self.humor, self.chaos,
             top3.join(",")
-        );
-
-        let output = std::process::Command::new("timeout")
-            .args([
-                "15",
-                "claude",
-                "-p",
-                &prompt,
-                "--model",
-                "sonnet",
-                "--system-prompt",
-                &system,
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()?;
-
-        let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !msg.is_empty() && msg.chars().count() <= 40 {
-            Some(msg)
-        } else {
-            None
-        }
+        ))
+        .system("あなたはターミナルペットの性格設定を生成するAIです。\
+            求められた性格テキストだけを出力してください。説明や補足は不要です。")
+        .execute()
     }
 
     fn fallback_personality(&self) -> String {

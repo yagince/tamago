@@ -7,13 +7,14 @@ mod show_tui;
 mod skill;
 mod status;
 mod tick;
+mod update;
 
 use clap::{Parser, Subcommand};
 
 use crate::storage::Storage;
 
 #[derive(Parser)]
-#[command(name = "tamago", about = "CLI で育てるターミナルペット")]
+#[command(name = "tamago", about = "CLI で育てるターミナルペット", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -64,6 +65,8 @@ pub enum Command {
         #[arg(long)]
         output_tokens: Option<u64>,
     },
+    /// 最新バージョンに更新
+    Update,
 }
 
 pub fn run(cli: Cli, storage: Storage) {
@@ -81,5 +84,6 @@ pub fn run(cli: Cli, storage: Storage) {
             claude_turn,
             output_tokens,
         }) => tick::run(&storage, cmd.as_deref(), claude_turn, output_tokens),
+        Some(Command::Update) => update::run(),
     }
 }

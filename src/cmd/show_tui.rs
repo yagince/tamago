@@ -115,7 +115,7 @@ fn run_tui(
     let mut last_reload = Instant::now();
     let message_interval = Duration::from_secs(message_interval_secs);
     let mut last_message = Instant::now() - message_interval; // 初回すぐ発火
-    let use_claude = has_claude_cli();
+    let use_claude = crate::claude::is_available();
     let (claude_tx, claude_rx) = mpsc::channel::<String>();
     // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
     let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
@@ -605,48 +605,15 @@ fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u6
 
 fn try_claude_message(pet_name: &str, level: u64, cmds: &[&str], tx: mpsc::Sender<String>) {
     let cmd_list = cmds.join(", ");
-    let system = format!(
-        "あなたは「{}」という名前のLv.{}のターミナルペットです。\
-        求められたセリフだけを出力してください。説明や補足は不要です。",
-        pet_name, level
-    );
-    let prompt = format!(
-        "ユーザーの直近のコマンド: {}。20文字以内で一言リアクション。",
-        cmd_list
-    );
-    std::thread::spawn(move || {
-        let output = std::process::Command::new("timeout")
-            .args([
-                "15",
-                "claude",
-                "-p",
-                &prompt,
-                "--model",
-                "sonnet",
-                "--system-prompt",
-                &system,
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            // timeout で kill されても stdout にデータがあれば使う
-            let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !msg.is_empty() && msg.chars().count() <= 30 {
-                let _ = tx.send(msg);
-            }
-        }
-    });
-}
-
-fn has_claude_cli() -> bool {
-    std::process::Command::new("which")
-        .arg("claude")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::claude::ClaudeRequest::new(format!(
+        "ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。"
+    ))
+    .system(format!(
+        "あなたは「{pet_name}」という名前のLv.{level}のターミナルペットです。\
+        求められたセリフだけを出力してください。説明や補足は不要です。"
+    ))
+    .max_chars(30)
+    .execute_async(tx);
 }
 
 // ── Evolution cutscene ───────────────────────────────────────
