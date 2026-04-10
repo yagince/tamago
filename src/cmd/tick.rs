@@ -34,11 +34,14 @@ fn claude_turn_record(storage: &Storage, total: u64) -> Option<ActivityRecord> {
     let mut pet = storage.load_pet().ok()?;
 
     let previous = pet.last_output_tokens;
+    if total == previous {
+        return None;
+    }
+
     pet.last_output_tokens = total;
     let _ = storage.save_pet(&pet);
 
     if previous == 0 {
-        // 初回: ベースラインとして値だけ保存、activity は作らない
         return None;
     }
 

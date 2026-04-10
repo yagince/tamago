@@ -24,7 +24,7 @@ pub enum Archetype {
     Generalist,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
     Git,
@@ -34,6 +34,19 @@ pub enum Category {
     Editor,
     Basic,
     Other,
+}
+
+impl Category {
+    /// hunger/mood 回復量 (+hunger, +mood)
+    fn recovery(self) -> (u8, u8) {
+        match self {
+            Category::Git => (1, 1),
+            Category::Dev | Category::Infra => (2, 0),
+            Category::Ai | Category::Editor => (0, 2),
+            Category::Basic => (1, 0),
+            Category::Other => (0, 1),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,19 +74,6 @@ pub struct PetState {
     /// 前回 decay を計算した時刻。activity の last_active とは独立。
     #[serde(default)]
     pub last_decay_at: Option<DateTime<Utc>>,
-}
-
-/// Category 毎の hunger/mood 回復量 (+hunger, +mood)
-fn recovery_for(cat: &Category) -> (u8, u8) {
-    match cat {
-        Category::Git => (1, 1),
-        Category::Dev => (2, 0),
-        Category::Infra => (2, 0),
-        Category::Ai => (0, 2),
-        Category::Editor => (0, 2),
-        Category::Basic => (1, 0),
-        Category::Other => (0, 1),
-    }
 }
 
 impl Stage {
@@ -219,10 +219,8 @@ impl PetState {
             self.mood = self.mood.saturating_sub(sub);
         }
 
-        // 最大粒度 (60min) を消費した分だけ進める。端数は次回へ。
-        // 両方 0 なら進めない（次回まとめて処理）。
+        // hunger/mood それぞれの消費時間の大きい方だけ進める。端数は次回へ。
         if mood_chunks > 0 || hunger_chunks > 0 {
-            // 実際に消費した分だけ timestamp を進める
             let consumed_min = (mood_chunks * MOOD_CHUNK_MIN)
                 .max(hunger_chunks * HUNGER_CHUNK_MIN);
             self.last_decay_at = Some(baseline + chrono::Duration::minutes(consumed_min));
@@ -232,23 +230,16 @@ impl PetState {
         }
     }
 
-    /// 未集計の activity を反映する（exp 加算 + カテゴリ別に hunger/mood 回復）。
-    /// コマンドのカテゴリで回復対象が変わる:
-    ///   Git: hunger +1, mood +1（達成感）
-    ///   Dev/Infra: hunger +2（実用）
-    ///   Ai/Editor: mood +2（創造・対話）
-    ///   Basic: hunger +1
-    ///   Other: mood +1
     pub fn apply_activities(&mut self, activities: &[crate::storage::ActivityRecord]) {
         let mut hunger_gain: u32 = 0;
         let mut mood_gain: u32 = 0;
 
         for record in activities {
             self.exp += record.exp;
-            *self.category_exp.entry(record.cat.clone()).or_insert(0) += record.exp;
+            *self.category_exp.entry(record.cat).or_insert(0) += record.exp;
             self.last_active = record.ts;
 
-            let (h, m) = recovery_for(&record.cat);
+            let (h, m) = record.cat.recovery();
             hunger_gain += h as u32;
             mood_gain += m as u32;
         }
@@ -594,98 +585,41 @@ mod tests {
     }
 
     #[test]
-    fn git_recovers_both_stats() {
+    fn category_recovery_per_type() {
+        // (category, expected_hunger, expected_mood)
+        let cases = [
+            (Category::Git, 51, 51),
+            (Category::Dev, 52, 50),
+            (Category::Infra, 52, 50),
+            (Category::Ai, 50, 52),
+            (Category::Editor, 50, 52),
+            (Category::Basic, 51, 50),
+            (Category::Other, 50, 51),
+        ];
+
         let now = Utc::now();
-        let mut pet = PetState::new("test", now);
-        pet.hunger = 50;
-        pet.mood = 50;
+        for (cat, want_hunger, want_mood) in cases {
+            let mut pet = PetState::new("test", now);
+            pet.hunger = 50;
+            pet.mood = 50;
 
-        let activities = vec![crate::storage::ActivityRecord {
-            cmd: "git commit".into(),
-            cat: Category::Git,
-            exp: 20,
-            ts: now,
-        }];
-        pet.apply_activities(&activities);
+            let activities = vec![crate::storage::ActivityRecord {
+                cmd: "test".into(),
+                cat,
+                exp: 1,
+                ts: now,
+            }];
+            pet.apply_activities(&activities);
 
-        assert_eq!(pet.hunger, 51);
-        assert_eq!(pet.mood, 51);
-    }
-
-    #[test]
-    fn dev_recovers_hunger_only() {
-        let now = Utc::now();
-        let mut pet = PetState::new("test", now);
-        pet.hunger = 50;
-        pet.mood = 50;
-
-        let activities = vec![crate::storage::ActivityRecord {
-            cmd: "cargo build".into(),
-            cat: Category::Dev,
-            exp: 8,
-            ts: now,
-        }];
-        pet.apply_activities(&activities);
-
-        assert_eq!(pet.hunger, 52);
-        assert_eq!(pet.mood, 50);
-    }
-
-    #[test]
-    fn ai_recovers_mood_only() {
-        let now = Utc::now();
-        let mut pet = PetState::new("test", now);
-        pet.hunger = 50;
-        pet.mood = 50;
-
-        let activities = vec![crate::storage::ActivityRecord {
-            cmd: "--claude-turn".into(),
-            cat: Category::Ai,
-            exp: 5,
-            ts: now,
-        }];
-        pet.apply_activities(&activities);
-
-        assert_eq!(pet.hunger, 50);
-        assert_eq!(pet.mood, 52);
-    }
-
-    #[test]
-    fn editor_recovers_mood_only() {
-        let now = Utc::now();
-        let mut pet = PetState::new("test", now);
-        pet.hunger = 50;
-        pet.mood = 50;
-
-        let activities = vec![crate::storage::ActivityRecord {
-            cmd: "vim src".into(),
-            cat: Category::Editor,
-            exp: 5,
-            ts: now,
-        }];
-        pet.apply_activities(&activities);
-
-        assert_eq!(pet.hunger, 50);
-        assert_eq!(pet.mood, 52);
-    }
-
-    #[test]
-    fn infra_recovers_hunger_only() {
-        let now = Utc::now();
-        let mut pet = PetState::new("test", now);
-        pet.hunger = 50;
-        pet.mood = 50;
-
-        let activities = vec![crate::storage::ActivityRecord {
-            cmd: "kubectl apply".into(),
-            cat: Category::Infra,
-            exp: 8,
-            ts: now,
-        }];
-        pet.apply_activities(&activities);
-
-        assert_eq!(pet.hunger, 52);
-        assert_eq!(pet.mood, 50);
+            assert_eq!(
+                pet.hunger, want_hunger,
+                "{:?}: hunger", cat
+            );
+            assert_eq!(
+                pet.mood, want_mood,
+                "{:?}: mood", cat
+            );
+        }
     }
 
     #[test]
