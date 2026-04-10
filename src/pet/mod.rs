@@ -115,24 +115,33 @@ impl Stage {
 }
 
 impl PetState {
-    /// 連続レベル。各 stage 内で 1-99 進み、進化後もそのまま続く。
-    /// Egg: 1-99 / Baby: 100-198 / Child: 199-297 / Teen: 298-396 / Adult: 397-495
+    /// 連続レベル。stage 毎に割り当てレベル数が増え、進化後もリセットしない。
+    /// Egg: 1-20 / Baby: 21-60 / Child: 61-130 / Teen: 131-250 / Adult: 251-450
     pub fn level(&self) -> u64 {
-        let stage_offset: u64 = match self.stage {
-            Stage::Egg => 0,
-            Stage::Baby => 99,
-            Stage::Child => 99 * 2,
-            Stage::Teen => 99 * 3,
-            Stage::Adult => 99 * 4,
+        const EGG_LEVELS: u64 = 20;
+        const BABY_LEVELS: u64 = 40;
+        const CHILD_LEVELS: u64 = 70;
+        const TEEN_LEVELS: u64 = 120;
+        const ADULT_LEVELS: u64 = 200;
+
+        let (stage_offset, stage_levels) = match self.stage {
+            Stage::Egg => (0, EGG_LEVELS),
+            Stage::Baby => (EGG_LEVELS, BABY_LEVELS),
+            Stage::Child => (EGG_LEVELS + BABY_LEVELS, CHILD_LEVELS),
+            Stage::Teen => (EGG_LEVELS + BABY_LEVELS + CHILD_LEVELS, TEEN_LEVELS),
+            Stage::Adult => (
+                EGG_LEVELS + BABY_LEVELS + CHILD_LEVELS + TEEN_LEVELS,
+                ADULT_LEVELS,
+            ),
         };
 
         let base = self.stage.exp_threshold();
         let range = self.stage.next_threshold().saturating_sub(base);
         let within = if range == 0 {
-            99
+            stage_levels
         } else {
             let progress = self.exp.saturating_sub(base);
-            ((progress * 99 / range).min(99) + 1) as u64
+            (progress * stage_levels / range).min(stage_levels - 1) + 1
         };
         stage_offset + within
     }
@@ -365,23 +374,63 @@ mod tests {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
 
-        // Egg 末期 (Lv.99 相当)
+        // Egg 末期 (Lv.20 相当)
         pet.exp = 4999;
         let before = pet.level();
-        assert_eq!(before, 99);
+        assert_eq!(before, 20);
 
         // Baby へ進化
         pet.exp = 5000;
         assert!(pet.try_evolve());
         assert_eq!(pet.stage, Stage::Baby);
 
-        // レベルはリセットされず、連続して上がる
+        // レベルはリセットされず、連続して上がる (Egg 20 + Baby 1 = 21)
         let after = pet.level();
         assert!(
             after > before,
             "進化後のレベル({after})は進化前({before})以上でなければならない"
         );
-        assert_eq!(after, 100);
+        assert_eq!(after, 21);
+    }
+
+    #[test]
+    fn stage_level_ranges() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+
+        // Egg: 1-20
+        pet.exp = 0;
+        assert_eq!(pet.level(), 1);
+        pet.exp = 4999;
+        assert_eq!(pet.level(), 20);
+
+        // Baby: 21-60
+        pet.stage = Stage::Baby;
+        pet.exp = 5000;
+        assert_eq!(pet.level(), 21);
+        pet.exp = 19999;
+        assert_eq!(pet.level(), 60);
+
+        // Child: 61-130
+        pet.stage = Stage::Child;
+        pet.exp = 20000;
+        assert_eq!(pet.level(), 61);
+        pet.exp = 49999;
+        assert_eq!(pet.level(), 130);
+
+        // Teen: 131-250
+        pet.stage = Stage::Teen;
+        pet.exp = 50000;
+        assert_eq!(pet.level(), 131);
+        pet.exp = 149999;
+        assert_eq!(pet.level(), 250);
+
+        // Adult: 251-450
+        pet.stage = Stage::Adult;
+        pet.exp = 150000;
+        assert_eq!(pet.level(), 251);
+        pet.exp = 299999;
+        assert_eq!(pet.level(), 450);
     }
 
     #[test]
