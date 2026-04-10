@@ -40,33 +40,84 @@ pub fn run(storage: &Storage) {
 
     drop(_lock);
 
-    if let Err(e) = run_tui(&pet) {
+    if let Err(e) = run_tui(storage, &pet) {
         eprintln!("TUI エラー: {e}");
     }
 }
 
-fn run_tui(pet: &PetState) -> io::Result<()> {
-    enable_raw_mode()?;
-    io::stdout().execute(EnterAlternateScreen)?;
+const RELOAD_INTERVAL: Duration = Duration::from_secs(5);
 
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    let base_aa = crate::pet::render::ascii_art(
+fn reload_pet(storage: &Storage) -> Option<PetState> {
+    let _lock = storage.lock().ok()?;
+    let mut pet = storage.load_pet().ok()?;
+
+    let activities = storage.read_and_clear_activities().ok()?;
+    if !activities.is_empty() {
+        let now = chrono::Utc::now();
+        pet.apply_decay(now);
+        let old_stage = pet.stage.clone();
+        pet.apply_activities(&activities);
+        while pet.try_evolve() {}
+        if pet.stage != old_stage {
+            pet.evolved_at = Some(now);
+        }
+        storage.save_pet(&pet).ok()?;
+    }
+
+    Some(pet)
+}
+
+fn build_aa(pet: &PetState) -> (Vec<String>, i16, i16) {
+    let aa = crate::pet::render::ascii_art(
         &pet.stage,
         &pet.archetype,
         &pet.name,
         pet.hunger,
         pet.mood,
     );
-    let aa_lines: Vec<String> = base_aa.lines().filter(|l| !l.is_empty()).map(String::from).collect();
-    let aa_h = aa_lines.len() as i16;
-    let aa_w = aa_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as i16;
+    let lines: Vec<String> = aa.lines().filter(|l| !l.is_empty()).map(String::from).collect();
+    let h = lines.len() as i16;
+    let w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as i16;
+    (lines, w, h)
+}
+
+fn run_tui(storage: &Storage, initial_pet: &PetState) -> io::Result<()> {
+    enable_raw_mode()?;
+    io::stdout().execute(EnterAlternateScreen)?;
+
+    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+    let mut pet = initial_pet.clone();
+    let (mut aa_lines, aa_w, aa_h) = build_aa(&pet);
 
     let mut state = AnimState::new(aa_w, aa_h, pet.hunger, pet.mood);
     let mut last_tick = Instant::now();
+    let mut last_reload = Instant::now();
 
     loop {
+        if last_reload.elapsed() >= RELOAD_INTERVAL {
+            if let Some(new_pet) = reload_pet(storage) {
+                let changed = new_pet.exp != pet.exp
+                    || new_pet.hunger != pet.hunger
+                    || new_pet.mood != pet.mood
+                    || new_pet.stage != pet.stage;
+                if changed {
+                    pet = new_pet;
+                    let (new_lines, new_w, new_h) = build_aa(&pet);
+                    aa_lines = new_lines;
+                    state.aa_w = new_w;
+                    state.aa_h = new_h;
+                    state.hunger = pet.hunger;
+                    state.mood = pet.mood;
+                }
+            }
+            last_reload = Instant::now();
+        }
+
         let current_aa = state.current_aa(&aa_lines);
-        terminal.draw(|f| draw(f, pet, &current_aa, &state))?;
+        let mut aa_inner_size = (40u16, 16u16);
+        terminal.draw(|f| {
+            aa_inner_size = draw(f, &pet, &current_aa, &state);
+        })?;
 
         let timeout = Duration::from_millis(TICK_MS).saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
@@ -84,7 +135,7 @@ fn run_tui(pet: &PetState) -> io::Result<()> {
         }
 
         if last_tick.elapsed() >= Duration::from_millis(TICK_MS) {
-            state.tick();
+            state.tick(aa_inner_size.0, aa_inner_size.1);
             last_tick = Instant::now();
         }
     }
@@ -149,8 +200,11 @@ impl AnimState {
         }
     }
 
-    fn tick(&mut self) {
+    /// 描画領域の実サイズから移動可能範囲を更新して 1 フレーム進める
+    fn tick(&mut self, area_w: u16, area_h: u16) {
         self.frame += 1;
+        let max_x = (area_w as i16 - self.aa_w).max(0);
+        let max_y = (area_h as i16 - self.aa_h).max(0);
 
         // フェーズ切り替え
         self.phase_timer = self.phase_timer.saturating_sub(1);
@@ -158,44 +212,40 @@ impl AnimState {
             match self.phase {
                 MovePhase::Walk => {
                     self.phase = MovePhase::Idle;
-                    self.phase_timer = 8 + (self.frame % 12); // 8-19フレーム休憩
-                    self.dx = 0;
-                    self.dy = 0;
+                    self.phase_timer = 8 + self.hash(7) % 12;
                 }
                 MovePhase::Idle => {
                     self.phase = MovePhase::Walk;
-                    self.phase_timer = 15 + (self.frame % 25); // 15-39フレーム歩行
-                    self.pick_direction();
+                    self.phase_timer = 20 + self.hash(13) % 30;
+                    self.pick_direction(max_x, max_y);
                 }
             }
         }
 
-        // 歩行中のみ移動
         if self.phase == MovePhase::Walk {
-            // ホップ: 3フレーム周期で y を ±1
-            let hop = if self.frame % 6 < 3 { 0 } else { 1 };
-            let base_y = self.y - if self.frame.wrapping_sub(1) % 6 < 3 { 0 } else { 1 };
             self.x += self.dx;
-            self.y = base_y + hop;
+            self.y += self.dy;
 
-            // 壁で反射
-            let max_x = 40_i16.saturating_sub(self.aa_w).max(0);
-            let max_y = 16_i16.saturating_sub(self.aa_h).max(0);
+            // 壁で反射 + 新しい方向を選び直す
+            let mut bounced = false;
             if self.x <= 0 {
                 self.x = 0;
-                self.dx = self.dx.abs().max(1);
+                bounced = true;
             }
             if self.x >= max_x {
                 self.x = max_x;
-                self.dx = -self.dx.abs().min(-1);
+                bounced = true;
             }
             if self.y <= 0 {
                 self.y = 0;
-                self.dy = self.dy.abs();
+                bounced = true;
             }
             if self.y >= max_y {
                 self.y = max_y;
-                self.dy = -self.dy.abs();
+                bounced = true;
+            }
+            if bounced {
+                self.pick_direction(max_x, max_y);
             }
 
             if self.dx > 0 {
@@ -212,26 +262,55 @@ impl AnimState {
             self.blink_next = self.blink_next.saturating_sub(1);
             if self.blink_next == 0 {
                 self.blink_remaining = 3;
-                self.blink_next = 30 + (self.frame % 20); // 30-49フレーム後に次のまばたき
+                self.blink_next = 30 + self.hash(19) % 20;
             }
         }
 
-        // スパークル更新
         self.update_sparkles();
     }
 
-    fn pick_direction(&mut self) {
-        let seed = self.frame.wrapping_mul(2654435761);
-        match seed % 8 {
-            0 => { self.dx = 1; self.dy = 0; }
-            1 => { self.dx = -1; self.dy = 0; }
-            2 => { self.dx = 0; self.dy = 1; }
-            3 => { self.dx = 0; self.dy = -1; }
-            4 => { self.dx = 1; self.dy = 1; }  // 斜め
-            5 => { self.dx = -1; self.dy = 1; }
-            6 => { self.dx = 1; self.dy = -1; }
-            _ => { self.dx = -1; self.dy = -1; }
+    /// frame ベースの簡易ハッシュ（決定的だが偏りにくい）
+    fn hash(&self, salt: u64) -> u64 {
+        self.frame.wrapping_add(salt).wrapping_mul(2654435761) >> 16
+    }
+
+    /// 現在位置から目標地点への方向を設定。壁際にいるときは反対方向を優先。
+    fn pick_direction(&mut self, max_x: i16, max_y: i16) {
+        let mid_x = max_x / 2;
+        let mid_y = max_y / 2;
+
+        // 8パターンの移動方向
+        let dirs: [(i16, i16); 8] = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (-1, 1), (1, -1), (-1, -1),
+        ];
+
+        let mut weights = [0u64; 8];
+        for (i, &(dx, dy)) in dirs.iter().enumerate() {
+            let mut w = 10u64;
+            if self.x <= 1 && dx > 0 { w += 20; }
+            if self.x >= max_x - 1 && dx < 0 { w += 20; }
+            if self.y <= 1 && dy > 0 { w += 20; }
+            if self.y >= max_y - 1 && dy < 0 { w += 20; }
+            if (self.x < mid_x && dx > 0) || (self.x > mid_x && dx < 0) { w += 5; }
+            if (self.y < mid_y && dy > 0) || (self.y > mid_y && dy < 0) { w += 5; }
+            weights[i] = w;
         }
+
+        let total: u64 = weights.iter().sum();
+        let mut pick = self.hash(31) % total;
+        let mut chosen = 0;
+        for (i, &w) in weights.iter().enumerate() {
+            if pick < w {
+                chosen = i;
+                break;
+            }
+            pick -= w;
+        }
+
+        let (dx, dy) = dirs[chosen];
+        self.dx = dx;
+        self.dy = dy;
     }
 
     fn update_sparkles(&mut self) {
@@ -272,7 +351,16 @@ impl AnimState {
         };
 
         if !self.facing_right {
-            lines = lines.iter().map(|l| flip_line(l)).collect();
+            // 全行を同じ幅にパディングしてから反転（形が崩れないように）
+            let max_w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+            lines = lines
+                .iter()
+                .map(|l| {
+                    let pad = max_w - l.chars().count();
+                    let padded = format!("{}{}", l, " ".repeat(pad));
+                    flip_line(&padded)
+                })
+                .collect();
         }
 
         lines
@@ -325,7 +413,7 @@ fn flip_line(line: &str) -> String {
 
 // ── Draw ─────────────────────────────────────────────────────
 
-fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) {
+fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) -> (u16, u16) {
     let size = f.area();
 
     let outer = Layout::default()
@@ -338,12 +426,13 @@ fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) {
         .constraints([Constraint::Percentage(55), Constraint::Length(1), Constraint::Percentage(45)])
         .split(outer[0]);
 
-    draw_aa_area(f, main[0], aa_lines, state, pet);
+    let aa_inner = draw_aa_area(f, main[0], aa_lines, state, pet);
     draw_status(f, main[2], pet);
     draw_category_bars(f, outer[1], pet);
+    aa_inner
 }
 
-fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimState, pet: &PetState) {
+fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimState, pet: &PetState) -> (u16, u16) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
@@ -409,6 +498,8 @@ fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimStat
             );
         }
     }
+
+    (inner.width, inner.height)
 }
 
 fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
