@@ -145,18 +145,24 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
                 recent_activities = peeked;
             }
             if let Some(new_pet) = reload_pet(storage) {
-                let changed = new_pet.exp != pet.exp
-                    || new_pet.hunger != pet.hunger
+                let evolved = new_pet.stage != pet.stage;
+                let aa_changed = new_pet.hunger != pet.hunger
                     || new_pet.mood != pet.mood
-                    || new_pet.stage != pet.stage;
-                if changed {
-                    pet = new_pet;
+                    || evolved;
+
+                if evolved {
+                    let old_stage = pet.stage.clone();
+                    state.start_evolution(aa_lines.clone(), &old_stage, &new_pet.stage);
+                }
+
+                pet = new_pet;
+                state.hunger = pet.hunger;
+                state.mood = pet.mood;
+                if aa_changed {
                     let (new_lines, new_w, new_h) = build_aa(&pet);
                     aa_lines = new_lines;
                     state.aa_w = new_w;
                     state.aa_h = new_h;
-                    state.hunger = pet.hunger;
-                    state.mood = pet.mood;
                 }
             }
             last_reload = Instant::now();
@@ -164,9 +170,15 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
 
         let current_aa = state.current_aa(&aa_lines);
         let mut aa_inner_size = (40u16, 16u16);
-        terminal.draw(|f| {
-            aa_inner_size = draw(f, &pet, &current_aa, &state);
-        })?;
+        if state.is_evolving() {
+            terminal.draw(|f| {
+                draw_evolution(f, &state);
+            })?;
+        } else {
+            terminal.draw(|f| {
+                aa_inner_size = draw(f, &pet, &current_aa, &state);
+            })?;
+        }
 
         let timeout = Duration::from_millis(TICK_MS).saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
@@ -184,7 +196,11 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
         }
 
         if last_tick.elapsed() >= Duration::from_millis(TICK_MS) {
-            state.tick(aa_inner_size.0, aa_inner_size.1);
+            if state.is_evolving() {
+                state.tick_evolution();
+            } else {
+                state.tick(aa_inner_size.0, aa_inner_size.1);
+            }
             last_tick = Instant::now();
         }
     }
@@ -204,6 +220,14 @@ const SAD_DECOS: &[char] = &['·', '.', ' ', ' ', ' ', ' '];
 enum MovePhase {
     Walk,
     Idle,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum EvolutionPhase {
+    Flash,    // 0-5 frame: 画面フラッシュ
+    Sparkle,  // 6-17 frame: キラキラ + 旧AA
+    Reveal,   // 18-33 frame: 新AA + テキスト
+    FadeOut,  // 34-41 frame: テキスト消え
 }
 
 struct AnimState {
@@ -227,6 +251,12 @@ struct AnimState {
     // セリフ
     message: Option<String>,
     message_timer: u64,
+    // 進化演出
+    evolution: Option<EvolutionPhase>,
+    evolution_timer: u64,
+    old_aa: Vec<String>,
+    old_stage_name: String,
+    new_stage_name: String,
 }
 
 impl AnimState {
@@ -249,6 +279,11 @@ impl AnimState {
             sparkles: Vec::new(),
             message: None,
             message_timer: 0,
+            evolution: None,
+            evolution_timer: 0,
+            old_aa: Vec::new(),
+            old_stage_name: String::new(),
+            new_stage_name: String::new(),
         }
     }
 
@@ -327,6 +362,32 @@ impl AnimState {
                 self.message = None;
             }
         }
+    }
+
+    fn start_evolution(&mut self, old_aa: Vec<String>, old_stage: &Stage, new_stage: &Stage) {
+        self.old_aa = old_aa;
+        self.old_stage_name = format!("{:?}", old_stage);
+        self.new_stage_name = format!("{:?}", new_stage);
+        self.evolution = Some(EvolutionPhase::Flash);
+        self.evolution_timer = 0;
+    }
+
+    fn tick_evolution(&mut self) {
+        if self.evolution.is_none() {
+            return;
+        }
+        self.evolution_timer += 1;
+        self.evolution = match self.evolution_timer {
+            0..=5 => Some(EvolutionPhase::Flash),
+            6..=17 => Some(EvolutionPhase::Sparkle),
+            18..=33 => Some(EvolutionPhase::Reveal),
+            34..=41 => Some(EvolutionPhase::FadeOut),
+            _ => None,
+        };
+    }
+
+    fn is_evolving(&self) -> bool {
+        self.evolution.is_some()
     }
 
     fn hash(&self, salt: u64) -> u64 {
@@ -550,6 +611,118 @@ fn has_claude_cli() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+// ── Evolution cutscene ───────────────────────────────────────
+
+const RAINBOW: &[Color] = &[
+    Color::LightRed, Color::LightYellow, Color::LightGreen,
+    Color::LightCyan, Color::LightBlue, Color::LightMagenta,
+];
+const EVO_SPARKLES: &[char] = &['★', '✦', '✧', '☆', '⋆', '✦', '♦', '◆'];
+
+fn draw_evolution(f: &mut Frame, state: &AnimState) {
+    let area = f.area();
+    let phase = match state.evolution {
+        Some(p) => p,
+        None => return,
+    };
+
+    match phase {
+        EvolutionPhase::Flash => {
+            // 画面全体を白くフラッシュ
+            let brightness = if state.evolution_timer < 3 {
+                Color::White
+            } else {
+                Color::DarkGray
+            };
+            let block = Block::default().style(Style::default().bg(brightness));
+            f.render_widget(block, area);
+        }
+        EvolutionPhase::Sparkle => {
+            // 旧 AA + 大量キラキラ（虹色）
+            let color = RAINBOW[(state.evolution_timer as usize) % RAINBOW.len()];
+            let cx = area.width / 2;
+            let cy = area.height / 2;
+
+            // 旧 AA を中央に描画
+            for (i, line) in state.old_aa.iter().enumerate() {
+                let y = cy.saturating_sub(state.old_aa.len() as u16 / 2) + i as u16;
+                let x = cx.saturating_sub(line.chars().count() as u16 / 2);
+                if y < area.height {
+                    f.render_widget(
+                        Paragraph::new(line.as_str()).style(Style::default().fg(color)),
+                        Rect::new(x, y, line.chars().count() as u16, 1),
+                    );
+                }
+            }
+
+            // キラキラを散らす
+            let seed = state.evolution_timer.wrapping_mul(6364136223846793005);
+            for i in 0..12 {
+                let s = seed.wrapping_add(i * 2971215073);
+                let sx = (s % area.width as u64) as u16;
+                let sy = (s.wrapping_mul(31) % area.height as u64) as u16;
+                let ch = EVO_SPARKLES[(s / 7 % EVO_SPARKLES.len() as u64) as usize];
+                let spark_color = RAINBOW[(s as usize / 3) % RAINBOW.len()];
+                f.render_widget(
+                    Paragraph::new(ch.to_string()).style(Style::default().fg(spark_color)),
+                    Rect::new(sx, sy, 1, 1),
+                );
+            }
+        }
+        EvolutionPhase::Reveal => {
+            let cy = area.height / 2;
+
+            let msg1 = "✨ しんかした！ ✨";
+            let msg2 = format!("{} → {}", state.old_stage_name, state.new_stage_name);
+
+            let color = RAINBOW[(state.evolution_timer as usize) % RAINBOW.len()];
+
+            f.render_widget(
+                Paragraph::new(msg1)
+                    .style(Style::default().fg(color).bold())
+                    .alignment(Alignment::Center),
+                Rect::new(0, cy.saturating_sub(1), area.width, 1),
+            );
+            f.render_widget(
+                Paragraph::new(msg2.as_str())
+                    .style(Style::default().fg(Color::White))
+                    .alignment(Alignment::Center),
+                Rect::new(0, cy + 1, area.width, 1),
+            );
+
+            // 背景キラキラ（少なめ）
+            let seed = state.evolution_timer.wrapping_mul(2654435761);
+            for i in 0..6 {
+                let s = seed.wrapping_add(i * 104729);
+                let sx = (s % area.width as u64) as u16;
+                let sy = (s.wrapping_mul(17) % area.height as u64) as u16;
+                let ch = EVO_SPARKLES[(s / 11 % EVO_SPARKLES.len() as u64) as usize];
+                f.render_widget(
+                    Paragraph::new(ch.to_string()).style(Style::default().fg(Color::Yellow)),
+                    Rect::new(sx, sy, 1, 1),
+                );
+            }
+        }
+        EvolutionPhase::FadeOut => {
+            // テキストがフェードアウト（色を暗く）
+            let cy = area.height / 2;
+            let fade = if state.evolution_timer < 38 {
+                Color::Gray
+            } else {
+                Color::DarkGray
+            };
+
+            let msg = "✨ しんかした！ ✨";
+            f.render_widget(
+                Paragraph::new(msg)
+                    .style(Style::default().fg(fade))
+                    .alignment(Alignment::Center),
+                Rect::new(0, cy, area.width, 1),
+            );
+        }
+    }
 }
 
 // ── AA flip ──────────────────────────────────────────────────
