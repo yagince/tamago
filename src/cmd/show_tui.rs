@@ -373,6 +373,13 @@ impl AnimState {
     }
 
     fn update_sparkles(&mut self) {
+        self.sparkles.clear();
+
+        // 約5秒に1回だけ表示（チカチカ防止）
+        if self.hash(53) % 42 != 0 {
+            return;
+        }
+
         let min_stat = self.hunger.min(self.mood);
         let decos = if min_stat < 30 {
             SAD_DECOS
@@ -384,7 +391,6 @@ impl AnimState {
 
         let count = if min_stat > 80 { 3 } else if min_stat > 50 { 2 } else if min_stat > 30 { 1 } else { 0 };
 
-        self.sparkles.clear();
         let seed = self.frame.wrapping_mul(6364136223846793005);
         for i in 0..count {
             let s = seed.wrapping_add(i as u64 * 2971215073);
