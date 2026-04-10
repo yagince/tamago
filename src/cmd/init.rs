@@ -15,7 +15,8 @@ pub fn run(storage: &Storage) {
         .expect("ディレクトリの作成に失敗しました");
 
     let name = random_name();
-    let pet = PetState::new(&name, Utc::now());
+    let mut pet = PetState::new(&name, Utc::now());
+    pet.personality = pet.generate_personality();
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");

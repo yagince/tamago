@@ -74,6 +74,16 @@ pub struct PetState {
     /// 前回 decay を計算した時刻。activity の last_active とは独立。
     #[serde(default)]
     pub last_decay_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub dev_power: u16,
+    #[serde(default)]
+    pub wisdom: u16,
+    #[serde(default)]
+    pub humor: u16,
+    #[serde(default)]
+    pub chaos: u16,
+    #[serde(default)]
+    pub personality: String,
 }
 
 impl Stage {
@@ -221,8 +231,7 @@ impl PetState {
 
         // hunger/mood それぞれの消費時間の大きい方だけ進める。端数は次回へ。
         if mood_chunks > 0 || hunger_chunks > 0 {
-            let consumed_min = (mood_chunks * MOOD_CHUNK_MIN)
-                .max(hunger_chunks * HUNGER_CHUNK_MIN);
+            let consumed_min = (mood_chunks * MOOD_CHUNK_MIN).max(hunger_chunks * HUNGER_CHUNK_MIN);
             self.last_decay_at = Some(baseline + chrono::Duration::minutes(consumed_min));
         } else if self.last_decay_at.is_none() {
             // 初回かつ短時間の場合も baseline を確定させる
@@ -277,7 +286,173 @@ impl PetState {
             leveled_up_at: None,
             last_output_tokens: 0,
             last_decay_at: Some(now),
+            dev_power: 0,
+            wisdom: 0,
+            humor: 0,
+            chaos: 0,
+            personality: String::new(),
         }
+    }
+
+    const STAT_POINTS_PER_LEVEL: u16 = 5;
+
+    pub fn apply_level_up_stats(&mut self, levels_gained: u64) {
+        for _ in 0..levels_gained {
+            let total: f64 = self.category_exp.values().sum::<u64>() as f64;
+            if total == 0.0 {
+                let p = Self::STAT_POINTS_PER_LEVEL;
+                self.humor += p / 4;
+                self.chaos += p / 4;
+                self.dev_power += p / 4;
+                self.wisdom += p - 3 * (p / 4);
+                continue;
+            }
+
+            let ratio = |cat: Category| -> f64 {
+                *self.category_exp.get(&cat).unwrap_or(&0) as f64 / total
+            };
+
+            let weights = [
+                ratio(Category::Ai) + ratio(Category::Dev) + ratio(Category::Infra),
+                ratio(Category::Ai) + ratio(Category::Dev) + ratio(Category::Editor),
+                ratio(Category::Git) + ratio(Category::Editor) + ratio(Category::Basic),
+                ratio(Category::Git) + ratio(Category::Infra) + ratio(Category::Other),
+            ];
+            let w_total: f64 = weights.iter().sum();
+            let points = Self::STAT_POINTS_PER_LEVEL;
+
+            let raw: Vec<f64> = weights
+                .iter()
+                .map(|w| w / w_total * points as f64)
+                .collect();
+            let floors: Vec<u16> = raw.iter().map(|r| *r as u16).collect();
+            let remainders: Vec<f64> = raw
+                .iter()
+                .zip(&floors)
+                .map(|(r, f)| r - *f as f64)
+                .collect();
+            let mut allocated = floors.clone();
+            let remaining = points.saturating_sub(floors.iter().sum::<u16>());
+            let mut indices: Vec<usize> = (0..4).collect();
+            indices.sort_by(|a, b| remainders[*b].partial_cmp(&remainders[*a]).unwrap());
+            for i in 0..remaining as usize {
+                allocated[indices[i]] += 1;
+            }
+
+            self.dev_power += allocated[0];
+            self.wisdom += allocated[1];
+            self.humor += allocated[2];
+            self.chaos += allocated[3];
+        }
+    }
+
+    pub fn should_regenerate_personality(old_level: u64, new_level: u64, evolved: bool) -> bool {
+        if evolved {
+            return true;
+        }
+        // 10 レベルごと
+        old_level / 10 != new_level / 10
+    }
+
+    pub fn generate_personality(&self) -> String {
+        #[cfg(not(test))]
+        if let Some(msg) = self.try_claude_personality() {
+            return msg;
+        }
+        self.fallback_personality()
+    }
+
+    #[cfg(not(test))]
+    fn try_claude_personality(&self) -> Option<String> {
+        let mut top_cats: Vec<_> = self.category_exp.iter().collect();
+        top_cats.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
+        let top3: Vec<String> = top_cats
+            .iter()
+            .take(3)
+            .map(|(k, v)| format!("{:?}:{}", k, v))
+            .collect();
+
+        let system = format!(
+            "あなたはターミナルペットの性格設定を生成するAIです。\
+            求められた性格テキストだけを出力してください。説明や補足は不要です。"
+        );
+        let prompt = format!(
+            "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
+            このペットの性格を30文字以内で。",
+            self.name,
+            self.level(),
+            self.dev_power,
+            self.wisdom,
+            self.humor,
+            self.chaos,
+            top3.join(",")
+        );
+
+        let output = std::process::Command::new("timeout")
+            .args([
+                "15",
+                "claude",
+                "-p",
+                &prompt,
+                "--model",
+                "sonnet",
+                "--system-prompt",
+                &system,
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+
+        let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !msg.is_empty() && msg.chars().count() <= 40 {
+            Some(msg)
+        } else {
+            None
+        }
+    }
+
+    fn fallback_personality(&self) -> String {
+        let stats = [
+            (self.dev_power, "dev_power"),
+            (self.wisdom, "wisdom"),
+            (self.humor, "humor"),
+            (self.chaos, "chaos"),
+        ];
+        let max_stat = stats.iter().max_by_key(|(v, _)| *v).unwrap().1;
+        let seed = self.name.bytes().fold(0usize, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(b as usize)
+        });
+
+        let candidates: &[&str] = match max_stat {
+            "dev_power" => &[
+                "ストイックな職人気質",
+                "黙々とコードを書くタイプ",
+                "ものづくりが大好き",
+                "効率を求める合理主義者",
+            ],
+            "wisdom" => &[
+                "博識で落ち着いた性格",
+                "知的好奇心の塊",
+                "本の虫",
+                "深く考えるタイプ",
+            ],
+            "humor" => &[
+                "いつも楽しそう",
+                "お調子者",
+                "みんなを笑わせたい",
+                "ムードメーカー",
+            ],
+            "chaos" => &[
+                "予測不能な行動をする",
+                "自由奔放",
+                "破壊と創造の申し子",
+                "常識にとらわれない",
+            ],
+            _ => &["バランス型の優等生", "なんでもそつなくこなす"],
+        };
+
+        candidates[seed % candidates.len()].to_string()
     }
 }
 
@@ -611,14 +786,8 @@ mod tests {
             }];
             pet.apply_activities(&activities);
 
-            assert_eq!(
-                pet.hunger, want_hunger,
-                "{:?}: hunger", cat
-            );
-            assert_eq!(
-                pet.mood, want_mood,
-                "{:?}: mood", cat
-            );
+            assert_eq!(pet.hunger, want_hunger, "{:?}: hunger", cat);
+            assert_eq!(pet.mood, want_mood, "{:?}: mood", cat);
         }
     }
 
@@ -654,5 +823,81 @@ mod tests {
         assert_eq!(restored.name, "クロード");
         assert_eq!(restored.stage, Stage::Egg);
         assert_eq!(restored.exp, pet.exp);
+    }
+
+    #[test]
+    fn stat_growth_git_heavy() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        *pet.category_exp.get_mut(&Category::Git).unwrap() = 1000;
+        pet.apply_level_up_stats(1);
+        assert!(pet.chaos > 0 || pet.humor > 0);
+        assert_eq!(pet.dev_power + pet.wisdom + pet.humor + pet.chaos, 5);
+    }
+
+    #[test]
+    fn stat_growth_balanced() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        for cat in [Category::Git, Category::Ai, Category::Dev, Category::Infra] {
+            *pet.category_exp.get_mut(&cat).unwrap() = 100;
+        }
+        pet.apply_level_up_stats(1);
+        assert_eq!(pet.dev_power + pet.wisdom + pet.humor + pet.chaos, 5);
+    }
+
+    #[test]
+    fn stat_growth_zero_exp() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        pet.apply_level_up_stats(1);
+        assert_eq!(pet.dev_power + pet.wisdom + pet.humor + pet.chaos, 5);
+    }
+
+    #[test]
+    fn stat_growth_multiple_levels() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        *pet.category_exp.get_mut(&Category::Ai).unwrap() = 500;
+        pet.apply_level_up_stats(10);
+        assert_eq!(pet.dev_power + pet.wisdom + pet.humor + pet.chaos, 50);
+    }
+
+    #[test]
+    fn personality_milestone_check() {
+        assert!(PetState::should_regenerate_personality(9, 10, false));
+        assert!(PetState::should_regenerate_personality(19, 20, false));
+        assert!(!PetState::should_regenerate_personality(10, 11, false));
+        assert!(PetState::should_regenerate_personality(5, 6, true));
+    }
+
+    #[test]
+    fn personality_fallback_not_empty() {
+        let now = Utc::now();
+        let pet = PetState::new("test", now);
+        let p = pet.generate_personality();
+        assert!(!p.is_empty());
+    }
+
+    #[test]
+    fn serde_backward_compat() {
+        // 旧形式の pet.json（新フィールドなし）が読める
+        let json = r#"{
+            "name": "テスト",
+            "born_at": "2026-04-10T00:00:00Z",
+            "stage": "egg",
+            "exp": 100,
+            "hunger": 80,
+            "mood": 90,
+            "category_exp": {"git": 50, "ai": 30},
+            "last_fed": "2026-04-10T00:00:00Z",
+            "last_active": "2026-04-10T00:00:00Z"
+        }"#;
+        let pet: PetState = serde_json::from_str(json).unwrap();
+        assert_eq!(pet.dev_power, 0);
+        assert_eq!(pet.wisdom, 0);
+        assert_eq!(pet.humor, 0);
+        assert_eq!(pet.chaos, 0);
+        assert_eq!(pet.personality, "");
     }
 }

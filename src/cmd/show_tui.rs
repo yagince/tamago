@@ -2,13 +2,13 @@ use std::io;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
-use ratatui::widgets::{BorderType, Block, Borders, Gauge, Padding, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Gauge, Padding, Paragraph};
 
 use chrono::Timelike;
 use unicode_width::UnicodeWidthStr;
@@ -65,10 +65,19 @@ fn reload_pet(storage: &Storage) -> Option<PetState> {
         let now = chrono::Utc::now();
         pet.apply_decay(now);
         let old_stage = pet.stage.clone();
+        let old_level = pet.level();
         pet.apply_activities(&activities);
         while pet.try_evolve() {}
-        if pet.stage != old_stage {
+        let evolved = pet.stage != old_stage;
+        if evolved {
             pet.evolved_at = Some(now);
+        }
+        let new_level = pet.level();
+        if new_level > old_level {
+            pet.apply_level_up_stats(new_level - old_level);
+            if PetState::should_regenerate_personality(old_level, new_level, evolved) {
+                pet.personality = pet.generate_personality();
+            }
         }
         storage.save_pet(&pet).ok()?;
     }
@@ -77,20 +86,23 @@ fn reload_pet(storage: &Storage) -> Option<PetState> {
 }
 
 fn build_aa(pet: &PetState) -> (Vec<String>, i16, i16) {
-    let aa = crate::pet::render::ascii_art(
-        &pet.stage,
-        &pet.archetype,
-        &pet.name,
-        pet.hunger,
-        pet.mood,
-    );
-    let lines: Vec<String> = aa.lines().filter(|l| !l.is_empty()).map(String::from).collect();
+    let aa =
+        crate::pet::render::ascii_art(&pet.stage, &pet.archetype, &pet.name, pet.hunger, pet.mood);
+    let lines: Vec<String> = aa
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
     let h = lines.len() as i16;
     let w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as i16;
     (lines, w, h)
 }
 
-fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64) -> io::Result<()> {
+fn run_tui(
+    storage: &Storage,
+    initial_pet: &PetState,
+    message_interval_secs: u64,
+) -> io::Result<()> {
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
 
@@ -127,12 +139,7 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
             // Claude CLI がある場合は非同期で上書きを試みる
             if use_claude && !recent_activities.is_empty() {
                 let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-                try_claude_message(
-                    &pet.name,
-                    pet.level(),
-                    &cmds,
-                    claude_tx.clone(),
-                );
+                try_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
             }
 
             last_message = Instant::now();
@@ -146,9 +153,8 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
             }
             if let Some(new_pet) = reload_pet(storage) {
                 let evolved = new_pet.stage != pet.stage;
-                let aa_changed = new_pet.hunger != pet.hunger
-                    || new_pet.mood != pet.mood
-                    || evolved;
+                let aa_changed =
+                    new_pet.hunger != pet.hunger || new_pet.mood != pet.mood || evolved;
 
                 if evolved {
                     let old_stage = pet.stage.clone();
@@ -187,7 +193,7 @@ fn run_tui(storage: &Storage, initial_pet: &PetState, message_interval_secs: u64
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            break
+                            break;
                         }
                         _ => {}
                     }
@@ -224,10 +230,10 @@ enum MovePhase {
 
 #[derive(Clone, Copy, PartialEq)]
 enum EvolutionPhase {
-    Flash,    // 0-5 frame: 画面フラッシュ
-    Sparkle,  // 6-17 frame: キラキラ + 旧AA
-    Reveal,   // 18-33 frame: 新AA + テキスト
-    FadeOut,  // 34-41 frame: テキスト消え
+    Flash,   // 0-5 frame: 画面フラッシュ
+    Sparkle, // 6-17 frame: キラキラ + 旧AA
+    Reveal,  // 18-33 frame: 新AA + テキスト
+    FadeOut, // 34-41 frame: テキスト消え
 }
 
 struct AnimState {
@@ -401,19 +407,37 @@ impl AnimState {
 
         // 8パターンの移動方向
         let dirs: [(i16, i16); 8] = [
-            (1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (-1, 1), (1, -1), (-1, -1),
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
         ];
 
         let mut weights = [0u64; 8];
         for (i, &(dx, dy)) in dirs.iter().enumerate() {
             let mut w = 10u64;
-            if self.x <= 1 && dx > 0 { w += 20; }
-            if self.x >= max_x - 1 && dx < 0 { w += 20; }
-            if self.y <= 1 && dy > 0 { w += 20; }
-            if self.y >= max_y - 1 && dy < 0 { w += 20; }
-            if (self.x < mid_x && dx > 0) || (self.x > mid_x && dx < 0) { w += 5; }
-            if (self.y < mid_y && dy > 0) || (self.y > mid_y && dy < 0) { w += 5; }
+            if self.x <= 1 && dx > 0 {
+                w += 20;
+            }
+            if self.x >= max_x - 1 && dx < 0 {
+                w += 20;
+            }
+            if self.y <= 1 && dy > 0 {
+                w += 20;
+            }
+            if self.y >= max_y - 1 && dy < 0 {
+                w += 20;
+            }
+            if (self.x < mid_x && dx > 0) || (self.x > mid_x && dx < 0) {
+                w += 5;
+            }
+            if (self.y < mid_y && dy > 0) || (self.y > mid_y && dy < 0) {
+                w += 5;
+            }
             weights[i] = w;
         }
 
@@ -450,7 +474,15 @@ impl AnimState {
             SPARKLES
         };
 
-        let count = if min_stat > 80 { 3 } else if min_stat > 50 { 2 } else if min_stat > 30 { 1 } else { 0 };
+        let count = if min_stat > 80 {
+            3
+        } else if min_stat > 50 {
+            2
+        } else if min_stat > 30 {
+            1
+        } else {
+            0
+        };
 
         let seed = self.frame.wrapping_mul(6364136223846793005);
         for i in 0..count {
@@ -531,19 +563,23 @@ fn pick_message(candidates: &[&str], frame: u64) -> String {
     candidates[idx].to_string()
 }
 
-fn generate_message(
-    activity: Option<&ActivityRecord>,
-    pet: &PetState,
-    frame: u64,
-) -> String {
+fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u64) -> String {
     if let Some(record) = activity {
         let candidates: &[&str] = match record.cat {
             Category::Git => &[
-                "おつかれ！", "またひとつ積み上げたね", "えいっ！送信！",
-                "git 使いこなしてるね", "ふむふむ",
+                "おつかれ！",
+                "またひとつ積み上げたね",
+                "えいっ！送信！",
+                "git 使いこなしてるね",
+                "ふむふむ",
             ],
             Category::Ai => &["ふむふむ...", "なるほどね", "考え中...", "仲間が来た！"],
-            Category::Dev => &["ガチャガチャ...できた？", "ドキドキ", "Rust だね！", "かっこいい"],
+            Category::Dev => &[
+                "ガチャガチャ...できた？",
+                "ドキドキ",
+                "Rust だね！",
+                "かっこいい",
+            ],
             Category::Infra => &["コンテナの中は広いなぁ", "☁", "デプロイ！"],
             Category::Editor => &["書いてる書いてる", "集中してるね"],
             Category::Basic => &["ふーん", "...", "♪"],
@@ -567,12 +603,7 @@ fn generate_message(
     pick_message(&["...", "♪", "〜", "ふふっ", "いい天気だね"], frame)
 }
 
-fn try_claude_message(
-    pet_name: &str,
-    level: u64,
-    cmds: &[&str],
-    tx: mpsc::Sender<String>,
-) {
+fn try_claude_message(pet_name: &str, level: u64, cmds: &[&str], tx: mpsc::Sender<String>) {
     let cmd_list = cmds.join(", ");
     let system = format!(
         "あなたは「{}」という名前のLv.{}のターミナルペットです。\
@@ -586,9 +617,14 @@ fn try_claude_message(
     std::thread::spawn(move || {
         let output = std::process::Command::new("timeout")
             .args([
-                "15", "claude", "-p", &prompt,
-                "--model", "sonnet",
-                "--system-prompt", &system,
+                "15",
+                "claude",
+                "-p",
+                &prompt,
+                "--model",
+                "sonnet",
+                "--system-prompt",
+                &system,
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -616,8 +652,12 @@ fn has_claude_cli() -> bool {
 // ── Evolution cutscene ───────────────────────────────────────
 
 const RAINBOW: &[Color] = &[
-    Color::LightRed, Color::LightYellow, Color::LightGreen,
-    Color::LightCyan, Color::LightBlue, Color::LightMagenta,
+    Color::LightRed,
+    Color::LightYellow,
+    Color::LightGreen,
+    Color::LightCyan,
+    Color::LightBlue,
+    Color::LightMagenta,
 ];
 const EVO_SPARKLES: &[char] = &['★', '✦', '✧', '☆', '⋆', '✦', '♦', '◆'];
 
@@ -750,7 +790,11 @@ fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) -
 
     let main = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(55), Constraint::Length(1), Constraint::Percentage(45)])
+        .constraints([
+            Constraint::Percentage(55),
+            Constraint::Length(1),
+            Constraint::Percentage(45),
+        ])
         .split(outer[0]);
 
     let aa_inner = draw_aa_area(f, main[0], aa_lines, state, pet);
@@ -759,7 +803,13 @@ fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) -
     aa_inner
 }
 
-fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimState, pet: &PetState) -> (u16, u16) {
+fn draw_aa_area(
+    f: &mut Frame,
+    area: Rect,
+    aa_lines: &[String],
+    state: &AnimState,
+    pet: &PetState,
+) -> (u16, u16) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
@@ -846,8 +896,7 @@ fn draw_aa_area(f: &mut Frame, area: Rect, aa_lines: &[String], state: &AnimStat
                 let ly = by + i as u16;
                 if ly < inner.y + inner.height {
                     f.render_widget(
-                        Paragraph::new(line.as_str())
-                            .style(Style::default().fg(Color::White)),
+                        Paragraph::new(line.as_str()).style(Style::default().fg(Color::White)),
                         Rect::new(bx, ly, bubble_w as u16, 1),
                     );
                 }
@@ -872,60 +921,137 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
     let creature = crate::pet::render::creature_type(&pet.stage, &pet.archetype, &pet.name);
     let lv = pet.level();
 
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(&pet.name, Style::default().fg(Color::White).bold()),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("[{creature}]"), Style::default().fg(Color::LightCyan)),
-        ]),
+    let stat_max = [pet.dev_power, pet.wisdom, pet.humor, pet.chaos]
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1) as usize;
+
+    let mut lines = vec![
+        Line::from(vec![Span::styled(
+            &pet.name,
+            Style::default().fg(Color::White).bold(),
+        )]),
+        Line::from(vec![Span::styled(
+            format!("[{creature}]"),
+            Style::default().fg(Color::LightCyan),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("Lv. ", Style::default().fg(Color::White)),
-            Span::styled(format!("{lv}"), Style::default().fg(Color::LightYellow).bold()),
+            Span::styled(
+                format!("{lv}"),
+                Style::default().fg(Color::LightYellow).bold(),
+            ),
         ]),
         Line::from(vec![
             Span::styled("EXP ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}", pet.exp), Style::default().fg(Color::LightCyan).bold()),
+            Span::styled(
+                format!("{}", pet.exp),
+                Style::default().fg(Color::LightCyan).bold(),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("HP  ", Style::default().fg(Color::LightGreen).bold()),
-            hp_bar(pet.hunger),
-            Span::styled(format!(" {}", pet.hunger), Style::default().fg(Color::White)),
+            Span::styled("♥  HP   ", Style::default().fg(Color::LightRed).bold()),
+            stat_bar(
+                pet.hunger as usize,
+                100,
+                Color::Green,
+                Color::Yellow,
+                Color::Red,
+            ),
+            Span::styled(
+                format!(" {}", pet.hunger),
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(vec![
-            Span::styled("MP  ", Style::default().fg(Color::LightBlue).bold()),
-            mp_bar(pet.mood),
+            Span::styled("💙 MP   ", Style::default().fg(Color::LightBlue).bold()),
+            stat_bar(
+                pet.mood as usize,
+                100,
+                Color::Blue,
+                Color::Magenta,
+                Color::Red,
+            ),
             Span::styled(format!(" {}", pet.mood), Style::default().fg(Color::White)),
         ]),
+        Line::from(vec![
+            Span::styled("⚡ 開発  ", Style::default().fg(Color::Yellow).bold()),
+            stat_bar(
+                pet.dev_power as usize,
+                stat_max,
+                Color::Yellow,
+                Color::Yellow,
+                Color::Yellow,
+            ),
+            Span::styled(
+                format!(" {}", pet.dev_power),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("📚 賢さ  ", Style::default().fg(Color::Cyan).bold()),
+            stat_bar(
+                pet.wisdom as usize,
+                stat_max,
+                Color::Cyan,
+                Color::Cyan,
+                Color::Cyan,
+            ),
+            Span::styled(
+                format!(" {}", pet.wisdom),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("😆 笑い  ", Style::default().fg(Color::Green).bold()),
+            stat_bar(
+                pet.humor as usize,
+                stat_max,
+                Color::Green,
+                Color::Green,
+                Color::Green,
+            ),
+            Span::styled(format!(" {}", pet.humor), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("🌀 混沌  ", Style::default().fg(Color::Magenta).bold()),
+            stat_bar(
+                pet.chaos as usize,
+                stat_max,
+                Color::Magenta,
+                Color::Magenta,
+                Color::Magenta,
+            ),
+            Span::styled(format!(" {}", pet.chaos), Style::default().fg(Color::White)),
+        ]),
     ];
+
+    if !pet.personality.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("💬 ", Style::default().fg(Color::Yellow)),
+            Span::styled(&pet.personality, Style::default().fg(Color::White).italic()),
+        ]));
+    }
 
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn hp_bar(val: u8) -> Span<'static> {
-    let filled = (val as usize * 10 / 100).min(10);
+fn stat_bar(val: usize, max: usize, high: Color, mid: Color, low: Color) -> Span<'static> {
+    let ratio = if max > 0 { val * 10 / max } else { 0 };
+    let filled = ratio.min(10);
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
-    let color = if val > 50 {
-        Color::Green
-    } else if val > 25 {
-        Color::Yellow
+    let pct = if max > 0 { val * 100 / max } else { 0 };
+    let color = if pct > 50 {
+        high
+    } else if pct > 25 {
+        mid
     } else {
-        Color::Red
-    };
-    Span::styled(bar, Style::default().fg(color))
-}
-
-fn mp_bar(val: u8) -> Span<'static> {
-    let filled = (val as usize * 10 / 100).min(10);
-    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(10 - filled));
-    let color = if val > 50 {
-        Color::Blue
-    } else if val > 25 {
-        Color::Magenta
-    } else {
-        Color::Red
+        low
     };
     Span::styled(bar, Style::default().fg(color))
 }
@@ -966,11 +1092,19 @@ fn draw_category_bars(f: &mut Frame, area: Rect, pet: &PetState) {
             break;
         }
         let val = *pet.category_exp.get(cat).unwrap_or(&0);
-        let ratio = if max > 0 { val as f64 / max as f64 } else { 0.0 };
+        let ratio = if max > 0 {
+            val as f64 / max as f64
+        } else {
+            0.0
+        };
 
         let row = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(7), Constraint::Min(10), Constraint::Length(8)])
+            .constraints([
+                Constraint::Length(7),
+                Constraint::Min(10),
+                Constraint::Length(8),
+            ])
             .split(rows[i]);
 
         f.render_widget(

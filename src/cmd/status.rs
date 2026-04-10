@@ -34,8 +34,16 @@ pub fn run(storage: &Storage) {
                 if pet.stage != old_stage {
                     pet.evolved_at = Some(now);
                 }
-                if pet.level() > old_level {
+                let new_level = pet.level();
+                let evolved = pet.stage != old_stage;
+                if new_level > old_level {
                     pet.leveled_up_at = Some(now);
+                    pet.apply_level_up_stats(new_level - old_level);
+                    if crate::pet::PetState::should_regenerate_personality(
+                        old_level, new_level, evolved,
+                    ) {
+                        pet.personality = pet.generate_personality();
+                    }
                 }
             }
 
