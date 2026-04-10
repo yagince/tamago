@@ -65,7 +65,7 @@ fn print_status(pet: &crate::pet::PetState) {
     );
     let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name);
     let colored = crate::pet::render::colorize_aa(&aa, color);
-    println!("{colored}\n");
+    println!("\n{colored}\n");
 
     let emoji = pet.emoji();
     let lv = pet.level();

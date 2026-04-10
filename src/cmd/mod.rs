@@ -3,6 +3,7 @@ pub(crate) mod init;
 mod name;
 mod reset;
 mod show;
+mod skill;
 mod status;
 mod tick;
 
@@ -38,6 +39,11 @@ pub enum Command {
         /// 対象シェル
         shell: hook::Shell,
     },
+    /// Claude Code 用スキルを管理
+    Skill {
+        #[command(subcommand)]
+        command: skill::SkillCommand,
+    },
     /// フックから呼ばれる（内部用）
     #[command(hide = true)]
     Tick {
@@ -61,6 +67,7 @@ pub fn run(cli: Cli, storage: Storage) {
         Some(Command::Reset) => reset::run(&storage),
         Some(Command::Status) => status::run(&storage),
         Some(Command::Hook { shell }) => hook::run(&shell),
+        Some(Command::Skill { command }) => skill::run(&command),
         Some(Command::Tick {
             cmd,
             claude_turn,
