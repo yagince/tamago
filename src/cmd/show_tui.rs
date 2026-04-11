@@ -102,6 +102,7 @@ async fn run_tui(
         llm::create_generator(&config, &storage.model_dir()).map(|e| Arc::new(Mutex::new(e)));
 
     let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
+    let mut llm_task: Option<tokio::task::JoinHandle<()>> = None;
 
     // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
     let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
@@ -126,7 +127,7 @@ async fn run_tui(
 
         if llm_engine.is_some() && !recent_activities.is_empty() {
             let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-            spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
+            llm_task = spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
         }
     }
 
@@ -207,7 +208,7 @@ async fn run_tui(
 
                 if llm_engine.is_some() && !recent_activities.is_empty() {
                     let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-                    spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
+                    llm_task = spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
                 }
             }
             Some(msg) = llm_rx.recv() => {
@@ -227,6 +228,10 @@ async fn run_tui(
                     }
             }
         }
+    }
+
+    if let Some(task) = llm_task {
+        task.abort();
     }
 
     disable_raw_mode()?;
@@ -638,10 +643,8 @@ fn spawn_llm_message(
     pet: &PetState,
     cmds: &[&str],
     tx: tokio::sync::mpsc::Sender<String>,
-) {
-    let Some(engine) = engine.clone() else {
-        return;
-    };
+) -> Option<tokio::task::JoinHandle<()>> {
+    let engine = engine.clone()?;
     let cmd_list = cmds.join(", ");
     let prompt = format!("ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。");
 
@@ -666,13 +669,13 @@ fn spawn_llm_message(
         cha = pet.chaos,
     );
 
-    tokio::task::spawn_blocking(move || {
+    Some(tokio::task::spawn_blocking(move || {
         if let Ok(mut eng) = engine.lock()
             && let Some(msg) = eng.as_mut().generate(&prompt, &system, 30)
         {
             let _ = tx.blocking_send(msg);
         }
-    });
+    }))
 }
 
 // ── Evolution cutscene ───────────────────────────────────────
