@@ -50,6 +50,10 @@ impl Storage {
         &self.base_dir
     }
 
+    pub fn model_dir(&self) -> PathBuf {
+        self.base_dir.join("models")
+    }
+
     pub fn ensure_dir(&self) -> io::Result<()> {
         fs::create_dir_all(&self.base_dir)
     }

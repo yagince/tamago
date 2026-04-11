@@ -354,16 +354,16 @@ impl PetState {
         old_level / 10 != new_level / 10
     }
 
-    pub async fn generate_personality(&self) -> String {
-        #[cfg(not(test))]
-        if let Some(msg) = self.try_claude_personality().await {
-            return msg;
+    pub fn generate_personality(&self, engine: Option<&mut crate::llm::LlmEngine>) -> String {
+        if let Some(engine) = engine {
+            if let Some(msg) = self.try_llm_personality(engine) {
+                return msg;
+            }
         }
         self.fallback_personality()
     }
 
-    #[cfg(not(test))]
-    async fn try_claude_personality(&self) -> Option<String> {
+    fn try_llm_personality(&self, engine: &mut crate::llm::LlmEngine) -> Option<String> {
         let mut top_cats: Vec<_> = self.category_exp.iter().collect();
         top_cats.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
         let top3: Vec<String> = top_cats
@@ -372,23 +372,22 @@ impl PetState {
             .map(|(k, v)| format!("{:?}:{}", k, v))
             .collect();
 
-        crate::claude::ClaudeRequest::new(format!(
-            "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
-            このペットの性格を30文字以内で。",
-            self.name,
-            self.level(),
-            self.dev_power,
-            self.wisdom,
-            self.humor,
-            self.chaos,
-            top3.join(",")
-        ))
-        .system(
+        engine.generate(
+            &format!(
+                "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
+                このペットの性格を30文字以内で。",
+                self.name,
+                self.level(),
+                self.dev_power,
+                self.wisdom,
+                self.humor,
+                self.chaos,
+                top3.join(",")
+            ),
             "あなたはターミナルペットの性格設定を生成するAIです。\
             求められた性格テキストだけを出力してください。説明や補足は不要です。",
+            30,
         )
-        .execute()
-        .await
     }
 
     pub(crate) fn fallback_personality(&self) -> String {
@@ -850,11 +849,11 @@ mod tests {
         assert!(PetState::should_regenerate_personality(5, 6, true));
     }
 
-    #[tokio::test]
-    async fn personality_fallback_not_empty() {
+    #[test]
+    fn personality_fallback_not_empty() {
         let now = Utc::now();
         let pet = PetState::new("test", now);
-        let p = pet.generate_personality().await;
+        let p = pet.generate_personality(None);
         assert!(!p.is_empty());
     }
 

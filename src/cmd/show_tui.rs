@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossterm::ExecutableCommand;
@@ -13,6 +14,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Gauge, Padding, Paragraph};
 use chrono::Timelike;
 use unicode_width::UnicodeWidthStr;
 
+use crate::llm;
 use crate::pet::{Category, PetState, Stage};
 use crate::storage::{ActivityRecord, Storage};
 
@@ -113,8 +115,15 @@ async fn run_tui(
     let (mut aa_lines, aa_w, aa_h) = build_aa(&pet);
 
     let mut state = AnimState::new(aa_w, aa_h, pet.hunger, pet.mood);
-    let use_claude = crate::claude::is_available().await;
-    let (claude_tx, mut claude_rx) = tokio::sync::mpsc::channel::<String>(8);
+
+    // ローカル LLM エンジン
+    let model_dir = storage.model_dir();
+    let llm_engine: Option<Arc<Mutex<llm::LlmEngine>>> =
+        llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir))
+            .ok()
+            .map(|e| Arc::new(Mutex::new(e)));
+
+    let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
 
     // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
     let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
@@ -137,9 +146,9 @@ async fn run_tui(
         state.message = Some(msg);
         state.message_timer = MESSAGE_DISPLAY_FRAMES;
 
-        if use_claude && !recent_activities.is_empty() {
+        if llm_engine.is_some() && !recent_activities.is_empty() {
             let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-            spawn_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
+            spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
         }
     }
 
@@ -177,7 +186,14 @@ async fn run_tui(
                     tokio::task::spawn_blocking(move || reload_pet_sync(&storage_clone)).await
                 {
                     if needs_personality {
-                        new_pet.personality = new_pet.generate_personality().await;
+                        if let Some(ref engine) = llm_engine {
+                            if let Ok(mut eng) = engine.lock() {
+                                new_pet.personality =
+                                    new_pet.generate_personality(Some(&mut eng));
+                            }
+                        } else {
+                            new_pet.personality = new_pet.generate_personality(None);
+                        }
                         let _ = storage.save_pet(&new_pet);
                     }
                     let evolved = new_pet.stage != pet.stage;
@@ -206,12 +222,12 @@ async fn run_tui(
                 state.message = Some(msg);
                 state.message_timer = MESSAGE_DISPLAY_FRAMES;
 
-                if use_claude && !recent_activities.is_empty() {
+                if llm_engine.is_some() && !recent_activities.is_empty() {
                     let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-                    spawn_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
+                    spawn_llm_message(&llm_engine, &pet, &cmds, llm_tx.clone());
                 }
             }
-            Some(msg) = claude_rx.recv() => {
+            Some(msg) = llm_rx.recv() => {
                 state.message = Some(msg);
                 state.message_timer = MESSAGE_DISPLAY_FRAMES;
             }
@@ -623,25 +639,44 @@ fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u6
     pick_message(&["...", "♪", "〜", "ふふっ", "いい天気だね"], frame)
 }
 
-fn spawn_claude_message(
-    pet_name: &str,
-    level: u64,
+fn spawn_llm_message(
+    engine: &Option<Arc<Mutex<llm::LlmEngine>>>,
+    pet: &PetState,
     cmds: &[&str],
     tx: tokio::sync::mpsc::Sender<String>,
 ) {
+    let Some(engine) = engine.clone() else {
+        return;
+    };
     let cmd_list = cmds.join(", ");
-    let request = crate::claude::ClaudeRequest::new(format!(
-        "ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。"
-    ))
-    .system(format!(
-        "あなたは「{pet_name}」という名前のLv.{level}のターミナルペットです。\
-        求められたセリフだけを出力してください。説明や補足は不要です。"
-    ))
-    .max_chars(30);
+    let prompt = format!("ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。");
 
-    tokio::spawn(async move {
-        if let Some(msg) = request.execute().await {
-            let _ = tx.send(msg).await;
+    let personality_hint = if pet.personality.is_empty() {
+        String::new()
+    } else {
+        format!("性格: {}。", pet.personality)
+    };
+
+    let system = format!(
+        "あなたは「{name}」という名前のLv.{lv}のターミナルペットです。\
+        {personality_hint}\
+        ステータス: HP{hp} MP{mp} 開発力{dev} 賢さ{wis} おもしろさ{hum} カオスさ{cha}。\
+        求められたセリフだけを出力してください。説明や補足は不要です。",
+        name = pet.name,
+        lv = pet.level(),
+        hp = pet.hunger,
+        mp = pet.mood,
+        dev = pet.dev_power,
+        wis = pet.wisdom,
+        hum = pet.humor,
+        cha = pet.chaos,
+    );
+
+    tokio::task::spawn_blocking(move || {
+        if let Ok(mut eng) = engine.lock() {
+            if let Some(msg) = eng.generate(&prompt, &system, 30) {
+                let _ = tx.blocking_send(msg);
+            }
         }
     });
 }

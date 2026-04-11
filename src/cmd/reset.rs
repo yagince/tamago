@@ -27,20 +27,26 @@ mod tests {
         (dir, storage)
     }
 
-    #[tokio::test]
-    async fn reset_recreates_pet() {
+    fn reset_sync(storage: &Storage) {
+        let dir = storage.base_dir();
+        fs::remove_dir_all(dir).expect("データの削除に失敗しました");
+        super::super::init::run_sync_for_test(storage);
+    }
+
+    #[test]
+    fn reset_recreates_pet() {
         let (_dir, storage) = setup_with_pet();
         assert!(storage.pet_exists());
 
-        run(&storage).await;
+        reset_sync(&storage);
 
         assert!(storage.pet_exists());
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.exp, 0);
     }
 
-    #[tokio::test]
-    async fn reset_clears_activity() {
+    #[test]
+    fn reset_clears_activity() {
         let (_dir, storage) = setup_with_pet();
 
         // activity を書き込む
@@ -53,7 +59,7 @@ mod tests {
         storage.append_activity(&record).unwrap();
         assert!(storage.activity_file().exists());
 
-        run(&storage).await;
+        reset_sync(&storage);
 
         assert!(!storage.activity_file().exists());
     }

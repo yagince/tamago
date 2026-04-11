@@ -1,7 +1,7 @@
 use chrono::Utc;
 
+use crate::llm;
 use crate::pet::PetState;
-use crate::pet::names::random_name;
 use crate::storage::Storage;
 
 pub async fn run(storage: &Storage) {
@@ -14,9 +14,18 @@ pub async fn run(storage: &Storage) {
         .ensure_dir()
         .expect("ディレクトリの作成に失敗しました");
 
-    let name = random_name();
+    // モデルダウンロード
+    let model_dir = storage.model_dir();
+    if let Err(e) = llm::download_model(&model_dir).await {
+        eprintln!("モデルのダウンロードに失敗: {e}");
+        eprintln!("オフラインモードで続行します");
+    }
+
+    let mut engine = llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir)).ok();
+    let name = crate::pet::names::generate_name(engine.as_mut());
+
     let mut pet = PetState::new(&name, Utc::now());
-    pet.personality = pet.generate_personality().await;
+    pet.personality = pet.generate_personality(engine.as_mut());
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
@@ -24,9 +33,10 @@ pub async fn run(storage: &Storage) {
     print_guide(storage, &name);
 }
 
-/// テスト用の同期版（Claude CLI を呼ばない）
+/// テスト用の同期版（LLM を使わない）
 #[cfg(test)]
 pub fn run_sync_for_test(storage: &Storage) {
+    use crate::pet::names::random_name;
     storage
         .ensure_dir()
         .expect("ディレクトリの作成に失敗しました");
@@ -62,10 +72,10 @@ mod tests {
         (dir, storage)
     }
 
-    #[tokio::test]
-    async fn init_creates_pet_json() {
+    #[test]
+    fn init_creates_pet_json() {
         let (_dir, storage) = setup();
-        run(&storage).await;
+        run_sync_for_test(&storage);
 
         assert!(storage.pet_exists());
         let pet = storage.load_pet().unwrap();
@@ -75,13 +85,13 @@ mod tests {
         assert_eq!(pet.mood, 100);
     }
 
-    #[tokio::test]
-    async fn init_creates_nested_directory() {
+    #[test]
+    fn init_creates_nested_directory() {
         let dir = TempDir::new().unwrap();
         let nested = dir.path().join("a").join("b");
         let storage = Storage::new(&nested);
 
-        run(&storage).await;
+        run_sync_for_test(&storage);
         assert!(storage.pet_exists());
     }
 }

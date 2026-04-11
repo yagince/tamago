@@ -1,7 +1,7 @@
 use clap::Parser;
 
-mod claude;
 mod cmd;
+mod llm;
 mod pet;
 mod storage;
 mod tracker;

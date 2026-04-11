@@ -1,3 +1,4 @@
+use crate::llm;
 use crate::storage::Storage;
 
 /// activity.jsonl がこのサイズ以上なら集計する
@@ -42,7 +43,11 @@ pub async fn run(storage: &Storage) {
                     if crate::pet::PetState::should_regenerate_personality(
                         old_level, new_level, evolved,
                     ) {
-                        pet.personality = pet.generate_personality().await;
+                        let model_dir = storage.model_dir();
+                        let mut engine =
+                            llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir))
+                                .ok();
+                        pet.personality = pet.generate_personality(engine.as_mut());
                     }
                 }
             }

@@ -1,5 +1,3 @@
-#[cfg(not(test))]
-use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PREFIXES: &[&str] = &[
@@ -108,37 +106,20 @@ const SUFFIXES: &[&str] = &[
     "コウ",
 ];
 
-pub async fn generate_name() -> String {
-    #[cfg(not(test))]
-    if let Some(name) = ask_claude().await {
-        return name;
+pub fn generate_name(engine: Option<&mut crate::llm::LlmEngine>) -> String {
+    if let Some(engine) = engine {
+        if let Some(name) = engine.generate(
+            "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
+            "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
+            10,
+        ) {
+            let name = name.trim().to_string();
+            if !name.is_empty() && name.len() <= 30 {
+                return name;
+            }
+        }
     }
     random_name()
-}
-
-#[cfg(not(test))]
-async fn ask_claude() -> Option<String> {
-    let output = tokio::process::Command::new("claude")
-        .args([
-            "--print",
-            "--model", "haiku",
-            "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let name = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if name.is_empty() || name.len() > 30 {
-        return None;
-    }
-    Some(name)
 }
 
 pub fn random_name() -> String {
