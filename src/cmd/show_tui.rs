@@ -118,10 +118,12 @@ async fn run_tui(
 
     // ローカル LLM エンジン
     let model_dir = storage.model_dir();
-    let llm_engine: Option<Arc<Mutex<llm::LlmEngine>>> =
-        llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir))
-            .ok()
-            .map(|e| Arc::new(Mutex::new(e)));
+    let llm_engine: Option<Arc<Mutex<llm::LlmEngine>>> = llm::LlmEngine::load(
+        &llm::model_path(&model_dir),
+        &llm::tokenizer_path(&model_dir),
+    )
+    .ok()
+    .map(|e| Arc::new(Mutex::new(e)));
 
     let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
 
@@ -187,9 +189,9 @@ async fn run_tui(
                 {
                     if needs_personality {
                         if let Some(ref engine) = llm_engine {
-                            if let Ok(eng) = engine.lock() {
+                            if let Ok(mut eng) = engine.lock() {
                                 new_pet.personality =
-                                    new_pet.generate_personality(Some(&eng));
+                                    new_pet.generate_personality(Some(&mut eng));
                             }
                         } else {
                             new_pet.personality = new_pet.generate_personality(None);
@@ -673,7 +675,7 @@ fn spawn_llm_message(
     );
 
     tokio::task::spawn_blocking(move || {
-        if let Ok(eng) = engine.lock() {
+        if let Ok(mut eng) = engine.lock() {
             if let Some(msg) = eng.generate(&prompt, &system, 30) {
                 let _ = tx.blocking_send(msg);
             }

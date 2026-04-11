@@ -21,11 +21,15 @@ pub async fn run(storage: &Storage) {
         eprintln!("オフラインモードで続行します");
     }
 
-    let engine = llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir)).ok();
-    let name = crate::pet::names::generate_name(engine.as_ref());
+    let mut engine = llm::LlmEngine::load(
+        &llm::model_path(&model_dir),
+        &llm::tokenizer_path(&model_dir),
+    )
+    .ok();
+    let name = crate::pet::names::generate_name(engine.as_mut());
 
     let mut pet = PetState::new(&name, Utc::now());
-    pet.personality = pet.generate_personality(engine.as_ref());
+    pet.personality = pet.generate_personality(engine.as_mut());
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
