@@ -62,6 +62,10 @@ jobs:
           restore-keys: |
             ${{ matrix.target }}-cargo-
 
+      - name: Install cmake
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get install -y cmake
+
       - name: Test
         if: matrix.target == 'x86_64-apple-darwin'
         run: cargo test
@@ -71,6 +75,8 @@ jobs:
         run: cargo test --features metal -- --ignored --nocapture
 
       - name: Build
+        env:
+          AWS_LC_SYS_CMAKE_BUILDER: "1"
         run: |
           FEATURES="${{ matrix.features }}"
           if [ -n "$FEATURES" ]; then
