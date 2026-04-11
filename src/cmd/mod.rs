@@ -1,5 +1,6 @@
 mod hook;
 pub(crate) mod init;
+mod llm_config;
 mod name;
 mod reset;
 mod show;
@@ -28,7 +29,7 @@ pub enum Command {
     Name {
         /// ペットの名前
         name: Option<String>,
-        /// Claude に名前を考えさせる
+        /// AI に名前を考えさせる
         #[arg(long)]
         ai: bool,
     },
@@ -51,6 +52,11 @@ pub enum Command {
     Skill {
         #[command(subcommand)]
         command: skill::SkillCommand,
+    },
+    /// LLM バックエンドの設定
+    Llm {
+        #[command(subcommand)]
+        command: llm_config::LlmCommand,
     },
     /// フックから呼ばれる（内部用）
     #[command(hide = true)]
@@ -81,6 +87,7 @@ pub async fn run(cli: Cli, storage: Storage) {
         Some(Command::Status) => status::run(&storage).await,
         Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Skill { command }) => skill::run(&command),
+        Some(Command::Llm { command }) => llm_config::run(&storage, &command).await,
         Some(Command::Tick {
             cmd,
             claude_turn,
