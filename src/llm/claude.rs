@@ -23,6 +23,8 @@ impl ClaudeCli {
     }
 
     fn execute(&self, prompt: &str, system: &str, max_chars: usize) -> Option<String> {
+        use std::io::Read;
+
         let args = vec![
             "-p".to_string(),
             prompt.to_string(),
@@ -32,31 +34,33 @@ impl ClaudeCli {
             system.to_string(),
         ];
 
-        let child = std::process::Command::new("claude")
+        let mut child = std::process::Command::new("claude")
             .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .ok()?;
 
-        let start = std::time::Instant::now();
-        let mut child = child;
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {
-                    if start.elapsed() >= self.timeout {
-                        let _ = child.kill();
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(_) => break,
+        // stdout を先に取り出して非同期で読む
+        let mut stdout = child.stdout.take()?;
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = stdout.read_to_string(&mut buf);
+            let _ = done_tx.send(());
+            buf
+        });
+
+        // タイムアウト待ち
+        match done_rx.recv_timeout(self.timeout) {
+            Ok(()) => {}
+            Err(_) => {
+                let _ = child.kill();
             }
         }
+        let _ = child.wait();
 
-        let output = child.wait_with_output().ok()?;
-        let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let msg = handle.join().ok()?.trim().to_string();
 
         if msg.is_empty() {
             None
