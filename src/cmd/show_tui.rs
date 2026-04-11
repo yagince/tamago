@@ -181,6 +181,8 @@ async fn run_tui(
                     if evolved {
                         let old_stage = pet.stage.clone();
                         state.start_evolution(aa_lines.clone(), &old_stage, &new_pet.stage);
+                    } else if new_pet.level() > pet.level() {
+                        state.start_levelup(new_pet.level());
                     }
 
                     pet = new_pet;
@@ -270,6 +272,8 @@ struct AnimState {
     // セリフ
     message: Option<String>,
     message_timer: u64,
+    // レベルアップ演出
+    levelup_timer: u64,
     // 進化演出
     evolution: Option<EvolutionPhase>,
     evolution_timer: u64,
@@ -298,6 +302,7 @@ impl AnimState {
             sparkles: Vec::new(),
             message: None,
             message_timer: 0,
+            levelup_timer: 0,
             evolution: None,
             evolution_timer: 0,
             old_aa: Vec::new(),
@@ -381,6 +386,16 @@ impl AnimState {
                 self.message = None;
             }
         }
+
+        if self.levelup_timer > 0 {
+            self.levelup_timer -= 1;
+        }
+    }
+
+    fn start_levelup(&mut self, level: u64) {
+        self.message = Some(format!("✨ Lv.{}！", level));
+        self.message_timer = MESSAGE_DISPLAY_FRAMES;
+        self.levelup_timer = MESSAGE_DISPLAY_FRAMES;
     }
 
     fn start_evolution(&mut self, old_aa: Vec<String>, old_stage: &Stage, new_stage: &Stage) {
@@ -473,28 +488,33 @@ impl AnimState {
     fn update_sparkles(&mut self) {
         self.sparkles.clear();
 
-        // 約5秒に1回だけ表示（チカチカ防止）
-        if !self.hash(53).is_multiple_of(42) {
-            return;
-        }
-
-        let min_stat = self.hunger.min(self.mood);
-        let decos = if min_stat < 30 {
-            SAD_DECOS
-        } else if min_stat > 80 {
-            HAPPY_DECOS
+        let (decos, count) = if self.levelup_timer > 0 {
+            (HAPPY_DECOS, 5)
         } else {
-            SPARKLES
-        };
+            // 約5秒に1回だけ表示（チカチカ防止）
+            if !self.hash(53).is_multiple_of(42) {
+                return;
+            }
 
-        let count = if min_stat > 80 {
-            3
-        } else if min_stat > 50 {
-            2
-        } else if min_stat > 30 {
-            1
-        } else {
-            0
+            let min_stat = self.hunger.min(self.mood);
+            let d = if min_stat < 30 {
+                SAD_DECOS
+            } else if min_stat > 80 {
+                HAPPY_DECOS
+            } else {
+                SPARKLES
+            };
+
+            let c = if min_stat > 80 {
+                3
+            } else if min_stat > 50 {
+                2
+            } else if min_stat > 30 {
+                1
+            } else {
+                0
+            };
+            (d, c)
         };
 
         let seed = self.frame.wrapping_mul(6364136223846793005);
