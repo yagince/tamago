@@ -861,6 +861,54 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_sets_leveled_up_at_on_level_up() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        // Egg Lv.1 → 少しexpを積んでレベルアップさせる
+        let activities: Vec<_> = (0..50)
+            .map(|_| crate::storage::ActivityRecord {
+                cmd: "git commit".into(),
+                cat: Category::Git,
+                exp: 20,
+                ts: now,
+            })
+            .collect();
+        let result = pet.aggregate(now, &activities, None);
+        assert!(result.leveled_up);
+        assert_eq!(pet.leveled_up_at, Some(now));
+    }
+
+    #[test]
+    fn aggregate_sets_evolved_at_on_evolution() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        // Egg→Baby に必要な exp 5000
+        let activities: Vec<_> = (0..250)
+            .map(|_| crate::storage::ActivityRecord {
+                cmd: "git commit".into(),
+                cat: Category::Git,
+                exp: 20,
+                ts: now,
+            })
+            .collect();
+        let result = pet.aggregate(now, &activities, None);
+        assert!(result.evolved);
+        assert_eq!(pet.evolved_at, Some(now));
+        assert_eq!(pet.stage, Stage::Baby);
+    }
+
+    #[test]
+    fn aggregate_no_change_with_empty_activities() {
+        let now = Utc::now();
+        let mut pet = PetState::new("test", now);
+        let result = pet.aggregate(now, &[], None);
+        assert!(!result.evolved);
+        assert!(!result.leveled_up);
+        assert_eq!(pet.evolved_at, None);
+        assert_eq!(pet.leveled_up_at, None);
+    }
+
+    #[test]
     fn serde_backward_compat() {
         // 旧形式の pet.json（新フィールドなし）が読める
         let json = r#"{

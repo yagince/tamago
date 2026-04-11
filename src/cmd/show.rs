@@ -29,6 +29,7 @@ pub async fn run(storage: &Storage) {
 
     let new_level = pet.level();
     if new_level > old_level {
+        pet.leveled_up_at = Some(now);
         pet.apply_level_up_stats(new_level - old_level);
         if crate::pet::PetState::should_regenerate_personality(old_level, new_level, evolved) {
             let config = Config::load(storage.base_dir());
