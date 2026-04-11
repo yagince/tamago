@@ -22,16 +22,6 @@ impl ClaudeCli {
         }
     }
 
-    pub fn is_available(&self) -> bool {
-        std::process::Command::new("claude")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-
     fn execute(&self, prompt: &str, system: &str, max_chars: usize) -> Option<String> {
         let args = vec![
             "-p".to_string(),
@@ -49,7 +39,6 @@ impl ClaudeCli {
             .spawn()
             .ok()?;
 
-        // タイムアウト付きで待つ
         let start = std::time::Instant::now();
         let mut child = child;
         loop {

@@ -24,16 +24,19 @@ pub fn create_generator(config: &Config, model_dir: &Path) -> Option<Box<dyn Tex
             .ok()?;
             Some(Box::new(engine))
         }
-        LlmBackend::Claude => {
-            let cli = claude::ClaudeCli::new();
-            if cli.is_available() {
-                Some(Box::new(cli))
-            } else {
-                eprintln!("Claude CLI が見つかりません。フォールバックモードで動作します");
-                None
-            }
-        }
+        LlmBackend::Claude => Some(Box::new(claude::ClaudeCli::new())),
         LlmBackend::None => None,
+    }
+}
+
+/// generator を借用して関数に渡すヘルパー
+pub fn with_generator<T>(
+    generator: &mut Option<Box<dyn TextGenerator>>,
+    f: impl FnOnce(Option<&mut dyn TextGenerator>) -> T,
+) -> T {
+    match generator {
+        Some(g) => f(Some(&mut **g)),
+        None => f(None),
     }
 }
 

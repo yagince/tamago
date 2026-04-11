@@ -137,7 +137,6 @@ fn select_device() -> Device {
     Device::Cpu
 }
 
-/// Qwen2.5 ChatML テンプレート
 fn format_prompt(system: &str, user: &str) -> String {
     format!(
         "<|im_start|>system\n{system}<|im_end|>\n\

@@ -46,14 +46,9 @@ pub async fn run(storage: &Storage) {
                     old_level, new_level, evolved,
                 ) {
                     let config = Config::load(storage.base_dir());
-                    let personality = {
-                        let mut generator = llm::create_generator(&config, &storage.model_dir());
-                        match &mut generator {
-                            Some(g) => pet.generate_personality(Some(g.as_mut())),
-                            None => pet.generate_personality(None),
-                        }
-                    };
-                    pet.personality = personality;
+                    let mut generator = llm::create_generator(&config, &storage.model_dir());
+                    pet.personality =
+                        llm::with_generator(&mut generator, |g| pet.generate_personality(g));
                 }
             }
         }
@@ -96,7 +91,6 @@ pub async fn run(storage: &Storage) {
             exp = pet.exp,
         );
     } else {
-        // 期限切れの timestamp を掃除
         let mut dirty = false;
         if pet.evolved_at.is_some() {
             pet.evolved_at = None;

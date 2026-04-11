@@ -25,22 +25,12 @@ pub async fn run(storage: &Storage) {
         }
     }
 
-    let (name, personality) = {
-        let mut generator = llm::create_generator(&config, &storage.model_dir());
-        let name = match &mut generator {
-            Some(g) => crate::pet::names::generate_name(Some(g.as_mut())),
-            None => crate::pet::names::generate_name(None),
-        };
-        let pet_tmp = PetState::new(&name, Utc::now());
-        let personality = match &mut generator {
-            Some(g) => pet_tmp.generate_personality(Some(g.as_mut())),
-            None => pet_tmp.generate_personality(None),
-        };
-        (name, personality)
-    };
-
+    let mut generator = llm::create_generator(&config, &storage.model_dir());
+    let name = llm::with_generator(&mut generator, |g| {
+        crate::pet::names::generate_name(g)
+    });
     let mut pet = PetState::new(&name, Utc::now());
-    pet.personality = personality;
+    pet.personality = llm::with_generator(&mut generator, |g| pet.generate_personality(g));
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
