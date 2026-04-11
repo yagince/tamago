@@ -27,30 +27,10 @@ pub async fn run(storage: &Storage) {
     if activity_size >= AGGREGATE_THRESHOLD
         && let Ok(_lock) = storage.lock()
     {
-        pet.apply_decay(now);
-
         if let Ok(activities) = storage.read_and_clear_activities() {
-            let old_stage = pet.stage.clone();
-            let old_level = pet.level();
-            pet.apply_activities(&activities);
-            while pet.try_evolve() {}
-            if pet.stage != old_stage {
-                pet.evolved_at = Some(now);
-            }
-            let new_level = pet.level();
-            let evolved = pet.stage != old_stage;
-            if new_level > old_level {
-                pet.leveled_up_at = Some(now);
-                pet.apply_level_up_stats(new_level - old_level);
-                if crate::pet::PetState::should_regenerate_personality(
-                    old_level, new_level, evolved,
-                ) {
-                    let config = Config::load(storage.base_dir());
-                    let mut generator = llm::create_generator(&config, &storage.model_dir());
-                    pet.personality =
-                        llm::with_generator(&mut generator, |g| pet.generate_personality(g));
-                }
-            }
+            let config = Config::load(storage.base_dir());
+            let mut generator = llm::create_generator(&config, &storage.model_dir());
+            llm::with_generator(&mut generator, |g| pet.grow(now, &activities, g));
         }
 
         let _ = storage.save_pet(&pet);

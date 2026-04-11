@@ -14,35 +14,15 @@ pub async fn run(storage: &Storage) {
         .expect("activity の読み込みに失敗しました");
 
     let now = chrono::Utc::now();
-    pet.apply_decay(now);
-
-    let old_stage = pet.stage.clone();
-    let old_level = pet.level();
-    pet.apply_activities(&activities);
-
-    while pet.try_evolve() {}
-
-    let evolved = pet.stage != old_stage;
-    if evolved {
-        pet.evolved_at = Some(now);
-    }
-
-    let new_level = pet.level();
-    if new_level > old_level {
-        pet.leveled_up_at = Some(now);
-        pet.apply_level_up_stats(new_level - old_level);
-        if crate::pet::PetState::should_regenerate_personality(old_level, new_level, evolved) {
-            let config = Config::load(storage.base_dir());
-            let mut generator = llm::create_generator(&config, &storage.model_dir());
-            pet.personality = llm::with_generator(&mut generator, |g| pet.generate_personality(g));
-        }
-    }
+    let config = Config::load(storage.base_dir());
+    let mut generator = llm::create_generator(&config, &storage.model_dir());
+    let result = llm::with_generator(&mut generator, |g| pet.grow(now, &activities, g));
 
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
-    if evolved {
+    if result.evolved {
         print_evolution(&pet);
     }
     print_status(&pet);

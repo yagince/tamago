@@ -38,15 +38,7 @@ pub async fn run(storage: &Storage, message_interval_secs: u64) {
         .expect("activity の読み込みに失敗しました");
 
     let now = chrono::Utc::now();
-    pet.apply_decay(now);
-    let old_stage = pet.stage.clone();
-    pet.apply_activities(&activities);
-    while pet.try_evolve() {}
-
-    let evolved = pet.stage != old_stage;
-    if evolved {
-        pet.evolved_at = Some(now);
-    }
+    pet.grow(now, &activities, None);
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
@@ -70,22 +62,8 @@ fn reload_pet_sync(storage: &Storage) -> Option<(PetState, bool)> {
     }
 
     let now = chrono::Utc::now();
-    pet.apply_decay(now);
-    let old_stage = pet.stage.clone();
-    let old_level = pet.level();
-    pet.apply_activities(&activities);
-    while pet.try_evolve() {}
-    let evolved = pet.stage != old_stage;
-    if evolved {
-        pet.evolved_at = Some(now);
-    }
-    let new_level = pet.level();
-    let needs_personality = if new_level > old_level {
-        pet.apply_level_up_stats(new_level - old_level);
-        PetState::should_regenerate_personality(old_level, new_level, evolved)
-    } else {
-        false
-    };
+    let result = pet.grow(now, &activities, None);
+    let needs_personality = result.needs_personality;
     storage.save_pet(&pet).ok()?;
 
     Some((pet, needs_personality))

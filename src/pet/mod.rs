@@ -5,6 +5,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[allow(dead_code)]
+pub struct GrowResult {
+    pub evolved: bool,
+    pub leveled_up: bool,
+    pub needs_personality: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
@@ -295,6 +302,48 @@ impl PetState {
     }
 
     const STAT_POINTS_PER_LEVEL: u16 = 5;
+
+    /// アクティビティ集計 → 進化 → レベルアップの一連処理。
+    /// show / status 両方から呼ばれる共通ロジック。
+    pub fn grow(
+        &mut self,
+        now: DateTime<Utc>,
+        activities: &[crate::storage::ActivityRecord],
+        engine: Option<&mut dyn crate::llm::TextGenerator>,
+    ) -> GrowResult {
+        self.apply_decay(now);
+
+        let old_stage = self.stage.clone();
+        let old_level = self.level();
+
+        self.apply_activities(activities);
+
+        while self.try_evolve() {}
+
+        let evolved = self.stage != old_stage;
+        if evolved {
+            self.evolved_at = Some(now);
+        }
+
+        let new_level = self.level();
+        let leveled_up = new_level > old_level;
+        let mut needs_personality = false;
+        if leveled_up {
+            self.leveled_up_at = Some(now);
+            self.apply_level_up_stats(new_level - old_level);
+            needs_personality =
+                Self::should_regenerate_personality(old_level, new_level, evolved);
+            if needs_personality {
+                self.personality = self.generate_personality(engine);
+            }
+        }
+
+        GrowResult {
+            evolved,
+            leveled_up,
+            needs_personality,
+        }
+    }
 
     pub fn apply_level_up_stats(&mut self, levels_gained: u64) {
         for _ in 0..levels_gained {
@@ -861,10 +910,11 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_sets_leveled_up_at_on_level_up() {
+    fn grow_sets_leveled_up_at_on_level_up() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
-        // Egg Lv.1 → 少しexpを積んでレベルアップさせる
+        assert_eq!(pet.level(), 1);
+        // exp 1000 → Lv.5 程度
         let activities: Vec<_> = (0..50)
             .map(|_| crate::storage::ActivityRecord {
                 cmd: "git commit".into(),
@@ -873,13 +923,14 @@ mod tests {
                 ts: now,
             })
             .collect();
-        let result = pet.aggregate(now, &activities, None);
+        let result = pet.grow(now, &activities, None);
+        assert!(pet.level() > 1);
         assert!(result.leveled_up);
         assert_eq!(pet.leveled_up_at, Some(now));
     }
 
     #[test]
-    fn aggregate_sets_evolved_at_on_evolution() {
+    fn grow_sets_evolved_at_on_evolution() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
         // Egg→Baby に必要な exp 5000
@@ -891,17 +942,17 @@ mod tests {
                 ts: now,
             })
             .collect();
-        let result = pet.aggregate(now, &activities, None);
+        let result = pet.grow(now, &activities, None);
         assert!(result.evolved);
         assert_eq!(pet.evolved_at, Some(now));
         assert_eq!(pet.stage, Stage::Baby);
     }
 
     #[test]
-    fn aggregate_no_change_with_empty_activities() {
+    fn grow_no_change_with_empty_activities() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
-        let result = pet.aggregate(now, &[], None);
+        let result = pet.grow(now, &[], None);
         assert!(!result.evolved);
         assert!(!result.leveled_up);
         assert_eq!(pet.evolved_at, None);
