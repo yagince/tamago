@@ -8,8 +8,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: check (${{ matrix.target }})
+  build:
+    name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -34,7 +34,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-          components: clippy
 
       - name: Install musl toolchain
         if: contains(matrix.target, 'linux-musl')
@@ -63,25 +62,37 @@ jobs:
           restore-keys: |
             ${{ matrix.target }}-cargo-
 
+      - name: Test
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: cargo test
+
+      - name: LLM tests (Metal GPU)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: cargo test --features metal -- --ignored --nocapture
+
       - name: Build
         run: |
           FEATURES="${{ matrix.features }}"
           if [ -n "$FEATURES" ]; then
-            cargo build --target ${{ matrix.target }} --features "$FEATURES"
+            cargo build --release --target ${{ matrix.target }} --features "$FEATURES"
           else
-            cargo build --target ${{ matrix.target }}
+            cargo build --release --target ${{ matrix.target }}
           fi
 
-      - name: Clippy
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: cargo clippy --features metal -- -D warnings
-
-      - name: Test
-        if: "!contains(matrix.target, 'aarch64')"
-        run: cargo test
-
-      - name: Format check
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: |
-          rustup component add rustfmt
-          cargo fmt -- --check
+  lint:
+    name: lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: lint-cargo-${{ hashFiles('Cargo.lock') }}
+      - run: cargo clippy -- -D warnings
+      - run: cargo fmt -- --check
