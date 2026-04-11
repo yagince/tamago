@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use crate::config::{Config, LlmBackend};
 use crate::llm;
 use crate::pet::PetState;
 use crate::storage::Storage;
@@ -14,22 +15,32 @@ pub async fn run(storage: &Storage) {
         .ensure_dir()
         .expect("ディレクトリの作成に失敗しました");
 
-    // モデルダウンロード
-    let model_dir = storage.model_dir();
-    if let Err(e) = llm::download_model(&model_dir).await {
-        eprintln!("モデルのダウンロードに失敗: {e}");
-        eprintln!("オフラインモードで続行します");
+    let config = Config::load(storage.base_dir());
+
+    if config.llm == LlmBackend::Local {
+        let model_dir = storage.model_dir();
+        if let Err(e) = llm::download_model(&model_dir).await {
+            eprintln!("モデルのダウンロードに失敗: {e}");
+            eprintln!("オフラインモードで続行します");
+        }
     }
 
-    let mut engine = llm::LlmEngine::load(
-        &llm::model_path(&model_dir),
-        &llm::tokenizer_path(&model_dir),
-    )
-    .ok();
-    let name = crate::pet::names::generate_name(engine.as_mut());
+    let (name, personality) = {
+        let mut generator = llm::create_generator(&config, &storage.model_dir());
+        let name = match &mut generator {
+            Some(g) => crate::pet::names::generate_name(Some(g.as_mut())),
+            None => crate::pet::names::generate_name(None),
+        };
+        let pet_tmp = PetState::new(&name, Utc::now());
+        let personality = match &mut generator {
+            Some(g) => pet_tmp.generate_personality(Some(g.as_mut())),
+            None => pet_tmp.generate_personality(None),
+        };
+        (name, personality)
+    };
 
     let mut pet = PetState::new(&name, Utc::now());
-    pet.personality = pet.generate_personality(engine.as_mut());
+    pet.personality = personality;
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");

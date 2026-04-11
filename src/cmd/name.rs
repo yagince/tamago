@@ -1,16 +1,16 @@
+use crate::config::Config;
 use crate::llm;
 use crate::pet::names::generate_name;
 use crate::storage::Storage;
 
 pub async fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let new_name = if ai {
-        let model_dir = storage.model_dir();
-        let mut engine = llm::LlmEngine::load(
-            &llm::model_path(&model_dir),
-            &llm::tokenizer_path(&model_dir),
-        )
-        .ok();
-        generate_name(engine.as_mut())
+        let config = Config::load(storage.base_dir());
+        let mut generator = llm::create_generator(&config, &storage.model_dir());
+        match &mut generator {
+            Some(g) => generate_name(Some(g.as_mut())),
+            None => generate_name(None),
+        }
     } else {
         name.expect("名前を指定してください").to_string()
     };

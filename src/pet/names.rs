@@ -106,7 +106,7 @@ const SUFFIXES: &[&str] = &[
     "コウ",
 ];
 
-pub fn generate_name(engine: Option<&mut crate::llm::LlmEngine>) -> String {
+pub fn generate_name(engine: Option<&mut dyn crate::llm::TextGenerator>) -> String {
     if let Some(engine) = engine {
         if let Some(name) = engine.generate(
             "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",

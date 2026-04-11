@@ -14,7 +14,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Gauge, Padding, Paragraph};
 use chrono::Timelike;
 use unicode_width::UnicodeWidthStr;
 
+use crate::config::Config;
 use crate::llm;
+use crate::llm::TextGenerator;
 use crate::pet::{Category, PetState, Stage};
 use crate::storage::{ActivityRecord, Storage};
 
@@ -116,14 +118,10 @@ async fn run_tui(
 
     let mut state = AnimState::new(aa_w, aa_h, pet.hunger, pet.mood);
 
-    // ローカル LLM エンジン
-    let model_dir = storage.model_dir();
-    let llm_engine: Option<Arc<Mutex<llm::LlmEngine>>> = llm::LlmEngine::load(
-        &llm::model_path(&model_dir),
-        &llm::tokenizer_path(&model_dir),
-    )
-    .ok()
-    .map(|e| Arc::new(Mutex::new(e)));
+    // LLM エンジン（config に基づいて選択）
+    let config = Config::load(storage.base_dir());
+    let llm_engine: Option<Arc<Mutex<Box<dyn TextGenerator>>>> =
+        llm::create_generator(&config, &storage.model_dir()).map(|e| Arc::new(Mutex::new(e)));
 
     let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
 
@@ -191,7 +189,7 @@ async fn run_tui(
                         if let Some(ref engine) = llm_engine {
                             if let Ok(mut eng) = engine.lock() {
                                 new_pet.personality =
-                                    new_pet.generate_personality(Some(&mut eng));
+                                    new_pet.generate_personality(Some(eng.as_mut()));
                             }
                         } else {
                             new_pet.personality = new_pet.generate_personality(None);
@@ -642,7 +640,7 @@ fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u6
 }
 
 fn spawn_llm_message(
-    engine: &Option<Arc<Mutex<llm::LlmEngine>>>,
+    engine: &Option<Arc<Mutex<Box<dyn TextGenerator>>>>,
     pet: &PetState,
     cmds: &[&str],
     tx: tokio::sync::mpsc::Sender<String>,
@@ -676,7 +674,7 @@ fn spawn_llm_message(
 
     tokio::task::spawn_blocking(move || {
         if let Ok(mut eng) = engine.lock() {
-            if let Some(msg) = eng.generate(&prompt, &system, 30) {
+            if let Some(msg) = eng.as_mut().generate(&prompt, &system, 30) {
                 let _ = tx.blocking_send(msg);
             }
         }

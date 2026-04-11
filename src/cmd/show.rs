@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::llm;
 use crate::storage::Storage;
 
@@ -30,13 +31,15 @@ pub async fn run(storage: &Storage) {
     if new_level > old_level {
         pet.apply_level_up_stats(new_level - old_level);
         if crate::pet::PetState::should_regenerate_personality(old_level, new_level, evolved) {
-            let model_dir = storage.model_dir();
-            let mut engine = llm::LlmEngine::load(
-                &llm::model_path(&model_dir),
-                &llm::tokenizer_path(&model_dir),
-            )
-            .ok();
-            pet.personality = pet.generate_personality(engine.as_mut());
+            let config = Config::load(storage.base_dir());
+            let personality = {
+                let mut generator = llm::create_generator(&config, &storage.model_dir());
+                match &mut generator {
+                    Some(g) => pet.generate_personality(Some(g.as_mut())),
+                    None => pet.generate_personality(None),
+                }
+            };
+            pet.personality = personality;
         }
     }
 

@@ -1,7 +1,4 @@
-//! ローカル LLM 推論エンジン。
-//! candle + quantized_qwen2 で GGUF モデルを推論する。
-//! GPU は optional features (metal/cuda) でコンパイル時に有効化し、
-//! ランタイムで利用可否を検出して CPU にフォールバック。
+//! ローカル LLM 推論 (candle + quantized_qwen2)。
 
 use std::path::{Path, PathBuf};
 
@@ -12,6 +9,8 @@ use candle_transformers::models::quantized_qwen2::ModelWeights;
 use candle_transformers::utils::apply_repeat_penalty;
 use tokenizers::Tokenizer;
 
+use super::TextGenerator;
+
 const GGUF_REPO: &str = "Qwen/Qwen2.5-1.5B-Instruct-GGUF";
 const GGUF_FILE: &str = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
 const TOKENIZER_REPO: &str = "Qwen/Qwen2.5-1.5B-Instruct";
@@ -21,16 +20,14 @@ const TOP_P: f64 = 0.9;
 const REPEAT_PENALTY: f32 = 1.3;
 const REPEAT_LAST_N: usize = 64;
 
-/// ローカル LLM エンジン
-pub struct LlmEngine {
+pub struct LocalLlm {
     model: ModelWeights,
     tokenizer: Tokenizer,
     device: Device,
     eos_token_ids: Vec<u32>,
 }
 
-impl LlmEngine {
-    /// GGUF モデル + tokenizer.json からロード
+impl LocalLlm {
     pub fn load(model_path: &Path, tokenizer_path: &Path) -> anyhow::Result<Self> {
         let device = select_device();
 
@@ -41,7 +38,6 @@ impl LlmEngine {
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| anyhow::anyhow!("tokenizer load error: {e}"))?;
 
-        // Qwen2.5 の EOS トークン
         let mut eos_token_ids = Vec::new();
         for special in ["<|im_end|>", "<|endoftext|>"] {
             if let Some(id) = tokenizer.token_to_id(special) {
@@ -57,18 +53,11 @@ impl LlmEngine {
         })
     }
 
-    /// テキスト生成（同期）
-    pub fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
-        let formatted = format_prompt(system, prompt);
-        self.generate_raw(&formatted, max_tokens)
-    }
-
     fn generate_raw(&mut self, prompt: &str, max_tokens: usize) -> Option<String> {
         let encoding = self.tokenizer.encode(prompt, false).ok()?;
         let token_ids: Vec<u32> = encoding.get_ids().to_vec();
         let prompt_len = token_ids.len();
 
-        // Prefill
         let input = Tensor::new(token_ids.as_slice(), &self.device)
             .ok()?
             .unsqueeze(0)
@@ -81,7 +70,6 @@ impl LlmEngine {
             .as_nanos() as u64;
         let mut sampler = LogitsProcessor::new(seed, Some(TEMPERATURE), Some(TOP_P));
 
-        // 最初のトークン
         let logits = logits.squeeze(0).ok()?;
         let logits = apply_repeat_penalty(&logits, REPEAT_PENALTY, &token_ids).ok()?;
         let next_token = sampler.sample(&logits).ok()?;
@@ -93,7 +81,6 @@ impl LlmEngine {
         all_tokens.push(next_token);
         let mut generated_ids = vec![next_token];
 
-        // Auto-regressive 生成
         for step in 1..max_tokens {
             let input = Tensor::new(&[*all_tokens.last().unwrap()], &self.device)
                 .ok()?
@@ -131,7 +118,13 @@ impl LlmEngine {
     }
 }
 
-/// GPU デバイス選択（コンパイル時 feature + ランタイム検出）
+impl TextGenerator for LocalLlm {
+    fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
+        let formatted = format_prompt(system, prompt);
+        self.generate_raw(&formatted, max_tokens)
+    }
+}
+
 fn select_device() -> Device {
     #[cfg(feature = "metal")]
     if let Ok(device) = Device::new_metal(0) {
@@ -144,7 +137,7 @@ fn select_device() -> Device {
     Device::Cpu
 }
 
-/// Qwen2.5 のチャットテンプレート (ChatML)
+/// Qwen2.5 ChatML テンプレート
 fn format_prompt(system: &str, user: &str) -> String {
     format!(
         "<|im_start|>system\n{system}<|im_end|>\n\
@@ -153,22 +146,18 @@ fn format_prompt(system: &str, user: &str) -> String {
     )
 }
 
-/// モデルファイルのパス
 pub fn model_path(model_dir: &Path) -> PathBuf {
     model_dir.join(GGUF_FILE)
 }
 
-/// トークナイザーファイルのパス
 pub fn tokenizer_path(model_dir: &Path) -> PathBuf {
     model_dir.join("tokenizer.json")
 }
 
-/// HuggingFace からモデルとトークナイザーをダウンロード
 pub async fn download_model(model_dir: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(model_dir)?;
     let api = hf_hub::api::tokio::Api::new()?;
 
-    // GGUF モデル
     let model_dest = model_path(model_dir);
     if !model_dest.exists() {
         eprintln!("📦 AI モデルをダウンロード中... ({GGUF_REPO}/{GGUF_FILE})");
@@ -178,7 +167,6 @@ pub async fn download_model(model_dir: &Path) -> anyhow::Result<()> {
         eprintln!("✓ モデルの準備完了");
     }
 
-    // トークナイザー
     let tok_dest = tokenizer_path(model_dir);
     if !tok_dest.exists() {
         eprintln!("📦 トークナイザーをダウンロード中...");
@@ -205,8 +193,6 @@ fn symlink_or_copy(src: &Path, dest: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// テスト用: hf-hub キャッシュから直接モデルをロード（init 不要）
-/// テスト用は軽量な 0.5B モデルを使用
 #[cfg(test)]
 const TEST_GGUF_REPO: &str = "Qwen/Qwen2.5-0.5B-Instruct-GGUF";
 #[cfg(test)]
@@ -215,14 +201,14 @@ const TEST_GGUF_FILE: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
 const TEST_TOKENIZER_REPO: &str = "Qwen/Qwen2.5-0.5B-Instruct";
 
 #[cfg(test)]
-fn ensure_test_model() -> (PathBuf, PathBuf) {
+pub fn ensure_test_model() -> (PathBuf, PathBuf) {
     use hf_hub::api::sync::Api;
     let api = Api::new().expect("HF API の初期化に失敗");
 
     let gguf = api
         .model(TEST_GGUF_REPO.to_string())
         .get(TEST_GGUF_FILE)
-        .expect("GGUF モデルの取得に失敗。ネットワーク接続を確認してください");
+        .expect("GGUF モデルの取得に失敗");
 
     let tok = api
         .model(TEST_TOKENIZER_REPO.to_string())
@@ -237,16 +223,16 @@ mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
-    fn engine() -> &'static Mutex<LlmEngine> {
-        static ENGINE: OnceLock<Mutex<LlmEngine>> = OnceLock::new();
+    fn engine() -> &'static Mutex<LocalLlm> {
+        static ENGINE: OnceLock<Mutex<LocalLlm>> = OnceLock::new();
         ENGINE.get_or_init(|| {
             let (model_path, tok_path) = ensure_test_model();
-            Mutex::new(LlmEngine::load(&model_path, &tok_path).expect("モデルのロードに失敗"))
+            Mutex::new(LocalLlm::load(&model_path, &tok_path).expect("モデルのロードに失敗"))
         })
     }
 
     #[test]
-    #[ignore] // LLM テスト: cargo test -- --ignored (--features metal 推奨)
+    #[ignore]
     fn load_model() {
         let _engine = engine().lock().unwrap();
     }
