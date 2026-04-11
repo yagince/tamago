@@ -4,7 +4,7 @@ pub const BABY: &[PetArt] = &[
     // スライム
     PetArt {
         creature_type: "スライム",
-        color: PetColor::Green,
+        color: PetColor::Cyan,
         art: "\
 \n   ▄▄▀▀▀▀▀▀▄▄\
 \n ▄ ▄████████▄ ▄\
@@ -127,7 +127,7 @@ pub const BABY: &[PetArt] = &[
     // キツネ
     PetArt {
         creature_type: "キツネ",
-        color: PetColor::Red,
+        color: PetColor::Yellow,
         art: "\
 \n  ▄▀▄    ▄▀▄\
 \n █  ▀████▀  █\
