@@ -386,7 +386,6 @@ impl AnimState {
                 self.message = None;
             }
         }
-
     }
 
     fn start_levelup(&mut self, level: u64) {
