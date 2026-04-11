@@ -8,11 +8,48 @@ mod teen;
 
 use super::{Archetype, Stage};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PetColor {
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+}
+
+impl PetColor {
+    pub fn ansi(self) -> &'static str {
+        match self {
+            Self::Red => "\x1b[91m",
+            Self::Green => "\x1b[92m",
+            Self::Yellow => "\x1b[93m",
+            Self::Blue => "\x1b[94m",
+            Self::Magenta => "\x1b[95m",
+            Self::Cyan => "\x1b[96m",
+            Self::White => "\x1b[97m",
+        }
+    }
+
+    pub fn to_ratatui(self) -> ratatui::style::Color {
+        use ratatui::style::Color;
+        match self {
+            Self::Red => Color::LightRed,
+            Self::Green => Color::LightGreen,
+            Self::Yellow => Color::LightYellow,
+            Self::Blue => Color::LightBlue,
+            Self::Magenta => Color::LightMagenta,
+            Self::Cyan => Color::LightCyan,
+            Self::White => Color::White,
+        }
+    }
+}
+
 pub struct PetArt {
     pub art: &'static str,
     pub creature_type: &'static str,
-    /// 進化/レベルアップ演出用のテーマ色（ANSI fg escape）
-    pub color: &'static str,
+    pub color: PetColor,
 }
 
 fn name_hash(name: &str) -> usize {
@@ -79,14 +116,12 @@ pub fn creature_type(stage: &Stage, archetype: &Option<Archetype>, name: &str) -
     select_art(stage, archetype, name).creature_type
 }
 
-/// pet のテーマ色（ANSI fg escape）。進化/レベルアップ演出用。
-pub fn pet_color(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'static str {
+pub fn pet_color(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> PetColor {
     select_art(stage, archetype, name).color
 }
 
-/// AA の本体 (`▀▄█`) にテーマ色、animate 由来のデコ文字（sparkle 類）を
-/// bright yellow で色付けする。空白・改行・英数字はそのまま。
-pub fn colorize_aa(aa: &str, color: &str) -> String {
+pub fn colorize_aa(aa: &str, color: PetColor) -> String {
+    let color = color.ansi();
     const SPARKLE_COLOR: &str = "\x1b[93m"; // bright yellow
     const RESET: &str = "\x1b[0m";
     let mut out = String::new();

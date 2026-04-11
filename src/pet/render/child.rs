@@ -1,10 +1,10 @@
-use super::PetArt;
+use super::{PetArt, PetColor};
 
 pub const CHILD: &[PetArt] = &[
     // 子鳥
     PetArt {
         creature_type: "子鳥",
-        color: "\x1b[93m",
+        color: PetColor::Yellow,
         art: "\
 \n     ████████\
 \n  ▄▄▀▄▄▄▄▄▄▄▄▀▄▄\
@@ -21,7 +21,7 @@ pub const CHILD: &[PetArt] = &[
     // 子うさぎ
     PetArt {
         creature_type: "子うさぎ",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n        ██   ▄▄\
 \n      ▄█▀▀ ▄▀\
@@ -39,7 +39,7 @@ pub const CHILD: &[PetArt] = &[
     // 子猫
     PetArt {
         creature_type: "子猫",
-        color: "\x1b[93m",
+        color: PetColor::Yellow,
         art: "\
 \n    █        █\
 \n  ██ ██    ██ ██\
@@ -56,7 +56,7 @@ pub const CHILD: &[PetArt] = &[
     // 子狐
     PetArt {
         creature_type: "子狐",
-        color: "\x1b[91m",
+        color: PetColor::Red,
         art: "\
 \n    ▄▄▀▀▀▀▀▀▄▄\
 \n  ▄▀          ▀▄\
@@ -71,7 +71,7 @@ pub const CHILD: &[PetArt] = &[
     // 子犬
     PetArt {
         creature_type: "子犬",
-        color: "\x1b[93m",
+        color: PetColor::Yellow,
         art: "\
 \n    ███████\
 \n ▄█▀       ██\
@@ -87,7 +87,7 @@ pub const CHILD: &[PetArt] = &[
     // 子スライム
     PetArt {
         creature_type: "子スライム",
-        color: "\x1b[92m",
+        color: PetColor::Green,
         art: "\
 \n    ▄█▀▀▀▀▀▀█▄\
 \n  ▄▀          ▀▄\

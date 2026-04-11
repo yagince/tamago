@@ -332,8 +332,7 @@ impl PetState {
             self.apply_level_up_stats(new_level - old_level);
         }
 
-        let needs_personality =
-            Self::should_regenerate_personality(old_level, new_level, evolved);
+        let needs_personality = Self::should_regenerate_personality(old_level, new_level, evolved);
         if needs_personality {
             self.personality = self.generate_personality(engine);
         }

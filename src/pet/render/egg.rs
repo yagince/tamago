@@ -1,10 +1,10 @@
-use super::PetArt;
+use super::{PetArt, PetColor};
 
 pub const EGG: &[PetArt] = &[
     // にっこり
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
@@ -17,7 +17,7 @@ pub const EGG: &[PetArt] = &[
     // ねむい
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▄▀▀▀▀▄▄\
 \n  ▄        ▄\
@@ -32,7 +32,7 @@ pub const EGG: &[PetArt] = &[
     // びっくり
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n    ▄█▀▀█▄\
 \n  ▄▀      ▀▄\
@@ -46,7 +46,7 @@ pub const EGG: &[PetArt] = &[
     // おこ
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n      ▄▄\
 \n    ▄▀  ▀▄\
@@ -58,7 +58,7 @@ pub const EGG: &[PetArt] = &[
     // ウインク
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄█▀▀▀██▄\
 \n  ▄▀      ██▄\
@@ -73,7 +73,7 @@ pub const EGG: &[PetArt] = &[
     // わらい
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n     ▀▀▀█▄\
 \n  ▄▀      ▀▄\
@@ -88,7 +88,7 @@ pub const EGG: &[PetArt] = &[
     // きょとん
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
@@ -101,7 +101,7 @@ pub const EGG: &[PetArt] = &[
     // むすっ
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
@@ -114,7 +114,7 @@ pub const EGG: &[PetArt] = &[
     // うるうる
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
@@ -127,7 +127,7 @@ pub const EGG: &[PetArt] = &[
     // すやすや
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀          ▀▄\
@@ -140,7 +140,7 @@ pub const EGG: &[PetArt] = &[
     // ぷんぷん
     PetArt {
         creature_type: "???",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▀▀▄\
 \n ▄▀ ▀▄    ▄▀ ▀▄\

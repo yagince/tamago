@@ -842,7 +842,7 @@ fn draw_aa_area(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let color = aa_color(&pet.stage);
+    let color = crate::pet::render::pet_color(&pet.stage, &pet.archetype, &pet.name).to_ratatui();
 
     // AA 描画
     for (row_idx, line) in aa_lines.iter().enumerate() {
@@ -1143,15 +1143,5 @@ fn draw_category_bars(f: &mut Frame, area: Rect, pet: &PetState) {
             Paragraph::new(format!("{val:>6}")).alignment(Alignment::Right),
             row[2],
         );
-    }
-}
-
-fn aa_color(stage: &Stage) -> Color {
-    match stage {
-        Stage::Egg => Color::White,
-        Stage::Baby => Color::LightGreen,
-        Stage::Child => Color::LightCyan,
-        Stage::Teen => Color::LightMagenta,
-        Stage::Adult => Color::LightYellow,
     }
 }

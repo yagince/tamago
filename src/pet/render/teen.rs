@@ -1,10 +1,10 @@
-use super::PetArt;
+use super::{PetArt, PetColor};
 
 pub const TEEN: &[PetArt] = &[
     // 子ドラゴン
     PetArt {
         creature_type: "子ドラゴン",
-        color: "\x1b[91m",
+        color: PetColor::Red,
         art: "\
 \n          ▀▄ ▄█▄▄\
 \n           █▀    ▀▄\
@@ -22,7 +22,7 @@ pub const TEEN: &[PetArt] = &[
     // 九尾狐
     PetArt {
         creature_type: "九尾狐",
-        color: "\x1b[91m",
+        color: PetColor::Red,
         art: "\
 \n        ▄   █▄    ▄█\
 \n   ▀▀  ▄  ▀ █ █  █▀█\
@@ -38,7 +38,7 @@ pub const TEEN: &[PetArt] = &[
     // おばけ
     PetArt {
         creature_type: "おばけ",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n     ▄▄██▀▀▀█▄▄\
 \n   ▄█▀        ▀█▄\
@@ -57,7 +57,7 @@ pub const TEEN: &[PetArt] = &[
     // コウモリ
     PetArt {
         creature_type: "コウモリ",
-        color: "\x1b[95m",
+        color: PetColor::Magenta,
         art: "\
 \n ▄▄█▄  ▄  █  ▄█▄▄\
 \n▀▀████ ████ ████▀▀\
@@ -68,7 +68,7 @@ pub const TEEN: &[PetArt] = &[
     // ヘビ
     PetArt {
         creature_type: "ヘビ",
-        color: "\x1b[92m",
+        color: PetColor::Green,
         art: "\
 \n        ▄▄███▄\
 \n       ▄██▄▄███▄\
@@ -84,7 +84,7 @@ pub const TEEN: &[PetArt] = &[
     // トカゲ
     PetArt {
         creature_type: "トカゲ",
-        color: "\x1b[92m",
+        color: PetColor::Green,
         art: "\
 \n ▄███▄\
 \n███▄███\
@@ -99,7 +99,7 @@ pub const TEEN: &[PetArt] = &[
     // サメ
     PetArt {
         creature_type: "サメ",
-        color: "\x1b[94m",
+        color: PetColor::Blue,
         art: "\
 \n        ▄█       ▄\
 \n  ▄▄▄▄▄███▄▄▄  ▄█▀\
@@ -110,7 +110,7 @@ pub const TEEN: &[PetArt] = &[
     // 骸骨
     PetArt {
         creature_type: "骸骨",
-        color: "\x1b[97m",
+        color: PetColor::White,
         art: "\
 \n   ▄▀▀▀▀▀▀▄\
 \n  █        █\
@@ -133,7 +133,7 @@ pub const TEEN: &[PetArt] = &[
     // キングスライム
     PetArt {
         creature_type: "キングスライム",
-        color: "\x1b[92m",
+        color: PetColor::Green,
         art: "\
 \n     █▄ ▄▄ ▄█\
 \n     ▀ ▀  ▀ ▀\
@@ -148,7 +148,7 @@ pub const TEEN: &[PetArt] = &[
     // チョウ
     PetArt {
         creature_type: "チョウ",
-        color: "\x1b[95m",
+        color: PetColor::Magenta,
         art: "\
 \n█▀█▀▄        ▄▀█▀█\
 \n▀▄ ▄▀▀      ▀▀▄ ▄▀\
