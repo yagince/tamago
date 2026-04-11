@@ -165,28 +165,34 @@ fn default_model_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock;
 
-    fn load_engine() -> LlmEngine {
-        let dir = default_model_dir();
-        let path = model_path(&dir);
-        if !path.exists() {
-            panic!(
-                "テスト用モデルが見つかりません: {}\n\
-                `cargo run -- init` でモデルをダウンロードしてください",
-                path.display()
-            );
-        }
-        LlmEngine::load_from_gguf(&path).expect("モデルのロードに失敗しました")
+    /// LlamaBackend はプロセスで1回だけ初期化する必要があるため、
+    /// テスト間で LlmEngine を共有する。
+    fn engine() -> &'static LlmEngine {
+        static ENGINE: OnceLock<LlmEngine> = OnceLock::new();
+        ENGINE.get_or_init(|| {
+            let dir = default_model_dir();
+            let path = model_path(&dir);
+            if !path.exists() {
+                panic!(
+                    "テスト用モデルが見つかりません: {}\n\
+                    `cargo run -- init` でモデルをダウンロードしてください",
+                    path.display()
+                );
+            }
+            LlmEngine::load_from_gguf(&path).expect("モデルのロードに失敗しました")
+        })
     }
 
     #[test]
     fn load_model() {
-        let _engine = load_engine();
+        let _engine = engine();
     }
 
     #[test]
     fn generate_short_japanese() {
-        let engine = load_engine();
+        let engine = engine();
         let result = engine.generate(
             "一言挨拶して。",
             "あなたはターミナルペットです。短いセリフだけ出力してください。",
@@ -200,7 +206,7 @@ mod tests {
 
     #[test]
     fn generate_pet_personality() {
-        let engine = load_engine();
+        let engine = engine();
         let result = engine.generate(
             "名前:ピカドン Lv.10 開発力:5 賢さ:3 おもしろさ:8 カオスさ:2\nこのペットの性格を30文字以内で。",
             "あなたはターミナルペットの性格設定を生成するAIです。性格テキストだけを出力してください。",
@@ -214,7 +220,7 @@ mod tests {
 
     #[test]
     fn generate_pet_name() {
-        let engine = load_engine();
+        let engine = engine();
         let result = engine.generate(
             "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
             "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
