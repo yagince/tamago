@@ -1,6 +1,6 @@
 use crate::storage::Storage;
 
-pub fn run(storage: &Storage) {
+pub async fn run(storage: &Storage) {
     let _lock = storage.lock().expect("ロックの取得に失敗しました");
 
     let mut pet = storage
@@ -29,7 +29,7 @@ pub fn run(storage: &Storage) {
     if new_level > old_level {
         pet.apply_level_up_stats(new_level - old_level);
         if crate::pet::PetState::should_regenerate_personality(old_level, new_level, evolved) {
-            pet.personality = pet.generate_personality();
+            pet.personality = pet.generate_personality().await;
         }
     }
 
@@ -147,12 +147,12 @@ mod tests {
     fn setup_with_pet() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
-        super::super::init::run(&storage);
+        super::super::init::run_sync_for_test(&storage);
         (dir, storage)
     }
 
-    #[test]
-    fn show_aggregates_pending_activities() {
+    #[tokio::test]
+    async fn show_aggregates_pending_activities() {
         let (_dir, storage) = setup_with_pet();
 
         // activity を追加
@@ -166,15 +166,15 @@ mod tests {
             storage.append_activity(&record).unwrap();
         }
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.exp, 60);
         assert_eq!(pet.category_exp[&Category::Git], 60);
     }
 
-    #[test]
-    fn show_clears_activities_after_apply() {
+    #[tokio::test]
+    async fn show_clears_activities_after_apply() {
         let (_dir, storage) = setup_with_pet();
 
         let record = ActivityRecord {
@@ -185,18 +185,18 @@ mod tests {
         };
         storage.append_activity(&record).unwrap();
 
-        run(&storage);
+        run(&storage).await;
         let pet_after_first = storage.load_pet().unwrap();
         assert_eq!(pet_after_first.exp, 1);
 
         // 2回目はクリア済みなので exp が増えない
-        run(&storage);
+        run(&storage).await;
         let pet_after_second = storage.load_pet().unwrap();
         assert_eq!(pet_after_second.exp, 1);
     }
 
-    #[test]
-    fn show_evolves_pet_when_threshold_reached() {
+    #[tokio::test]
+    async fn show_evolves_pet_when_threshold_reached() {
         let (_dir, storage) = setup_with_pet();
 
         // Egg→Baby に必要な 5000 exp 分の activity
@@ -210,18 +210,18 @@ mod tests {
             storage.append_activity(&record).unwrap();
         }
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.stage, Stage::Baby);
         assert_eq!(pet.exp, 5000);
     }
 
-    #[test]
-    fn show_without_activities() {
+    #[tokio::test]
+    async fn show_without_activities() {
         let (_dir, storage) = setup_with_pet();
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.exp, 0);

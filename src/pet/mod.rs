@@ -354,16 +354,16 @@ impl PetState {
         old_level / 10 != new_level / 10
     }
 
-    pub fn generate_personality(&self) -> String {
+    pub async fn generate_personality(&self) -> String {
         #[cfg(not(test))]
-        if let Some(msg) = self.try_claude_personality() {
+        if let Some(msg) = self.try_claude_personality().await {
             return msg;
         }
         self.fallback_personality()
     }
 
     #[cfg(not(test))]
-    fn try_claude_personality(&self) -> Option<String> {
+    async fn try_claude_personality(&self) -> Option<String> {
         let mut top_cats: Vec<_> = self.category_exp.iter().collect();
         top_cats.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
         let top3: Vec<String> = top_cats
@@ -375,15 +375,23 @@ impl PetState {
         crate::claude::ClaudeRequest::new(format!(
             "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
             このペットの性格を30文字以内で。",
-            self.name, self.level(), self.dev_power, self.wisdom, self.humor, self.chaos,
+            self.name,
+            self.level(),
+            self.dev_power,
+            self.wisdom,
+            self.humor,
+            self.chaos,
             top3.join(",")
         ))
-        .system("あなたはターミナルペットの性格設定を生成するAIです。\
-            求められた性格テキストだけを出力してください。説明や補足は不要です。")
+        .system(
+            "あなたはターミナルペットの性格設定を生成するAIです。\
+            求められた性格テキストだけを出力してください。説明や補足は不要です。",
+        )
         .execute()
+        .await
     }
 
-    fn fallback_personality(&self) -> String {
+    pub(crate) fn fallback_personality(&self) -> String {
         let stats = [
             (self.dev_power, "dev_power"),
             (self.wisdom, "wisdom"),
@@ -842,11 +850,11 @@ mod tests {
         assert!(PetState::should_regenerate_personality(5, 6, true));
     }
 
-    #[test]
-    fn personality_fallback_not_empty() {
+    #[tokio::test]
+    async fn personality_fallback_not_empty() {
         let now = Utc::now();
         let pet = PetState::new("test", now);
-        let p = pet.generate_personality();
+        let p = pet.generate_personality().await;
         assert!(!p.is_empty());
     }
 

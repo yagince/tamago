@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::storage::Storage;
 
-pub fn run(storage: &Storage) {
+pub async fn run(storage: &Storage) {
     let dir = storage.base_dir();
     if !dir.exists() {
         eprintln!("データが見つかりません: {}", dir.display());
@@ -12,7 +12,7 @@ pub fn run(storage: &Storage) {
     fs::remove_dir_all(dir).expect("データの削除に失敗しました");
     println!("🗑️  データを削除しました: {}", dir.display());
 
-    super::init::run(storage);
+    super::init::run(storage).await;
 }
 
 #[cfg(test)]
@@ -23,24 +23,24 @@ mod tests {
     fn setup_with_pet() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
-        super::super::init::run(&storage);
+        super::super::init::run_sync_for_test(&storage);
         (dir, storage)
     }
 
-    #[test]
-    fn reset_recreates_pet() {
+    #[tokio::test]
+    async fn reset_recreates_pet() {
         let (_dir, storage) = setup_with_pet();
         assert!(storage.pet_exists());
 
-        run(&storage);
+        run(&storage).await;
 
         assert!(storage.pet_exists());
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.exp, 0);
     }
 
-    #[test]
-    fn reset_clears_activity() {
+    #[tokio::test]
+    async fn reset_clears_activity() {
         let (_dir, storage) = setup_with_pet();
 
         // activity を書き込む
@@ -53,7 +53,7 @@ mod tests {
         storage.append_activity(&record).unwrap();
         assert!(storage.activity_file().exists());
 
-        run(&storage);
+        run(&storage).await;
 
         assert!(!storage.activity_file().exists());
     }

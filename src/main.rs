@@ -6,8 +6,9 @@ mod pet;
 mod storage;
 mod tracker;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let cli = cmd::Cli::parse();
     let storage = storage::Storage::default();
-    cmd::run(cli, storage);
+    cmd::run(cli, storage).await;
 }

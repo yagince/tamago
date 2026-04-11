@@ -69,14 +69,16 @@ pub enum Command {
     Update,
 }
 
-pub fn run(cli: Cli, storage: Storage) {
+pub async fn run(cli: Cli, storage: Storage) {
     match cli.command {
-        None => show::run(&storage),
-        Some(Command::Init) => init::run(&storage),
-        Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai),
-        Some(Command::Show { message_interval }) => show_tui::run(&storage, message_interval),
-        Some(Command::Reset) => reset::run(&storage),
-        Some(Command::Status) => status::run(&storage),
+        None => show::run(&storage).await,
+        Some(Command::Init) => init::run(&storage).await,
+        Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai).await,
+        Some(Command::Show { message_interval }) => {
+            show_tui::run(&storage, message_interval).await;
+        }
+        Some(Command::Reset) => reset::run(&storage).await,
+        Some(Command::Status) => status::run(&storage).await,
         Some(Command::Hook { shell }) => hook::run(&shell),
         Some(Command::Skill { command }) => skill::run(&command),
         Some(Command::Tick {
@@ -84,6 +86,6 @@ pub fn run(cli: Cli, storage: Storage) {
             claude_turn,
             output_tokens,
         }) => tick::run(&storage, cmd.as_deref(), claude_turn, output_tokens),
-        Some(Command::Update) => update::run(),
+        Some(Command::Update) => update::run().await,
     }
 }

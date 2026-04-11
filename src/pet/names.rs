@@ -1,5 +1,5 @@
 #[cfg(not(test))]
-use std::process::Command;
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PREFIXES: &[&str] = &[
@@ -108,23 +108,26 @@ const SUFFIXES: &[&str] = &[
     "コウ",
 ];
 
-pub fn generate_name() -> String {
+pub async fn generate_name() -> String {
     #[cfg(not(test))]
-    if let Some(name) = ask_claude() {
+    if let Some(name) = ask_claude().await {
         return name;
     }
     random_name()
 }
 
 #[cfg(not(test))]
-fn ask_claude() -> Option<String> {
-    let output = Command::new("claude")
+async fn ask_claude() -> Option<String> {
+    let output = tokio::process::Command::new("claude")
         .args([
             "--print",
             "--model", "haiku",
             "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
         ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .output()
+        .await
         .ok()?;
 
     if !output.status.success() {

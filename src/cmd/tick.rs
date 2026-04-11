@@ -66,7 +66,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
         storage.ensure_dir().unwrap();
-        super::super::init::run(&storage);
+        super::super::init::run_sync_for_test(&storage);
         (dir, storage)
     }
 

@@ -10,7 +10,7 @@ const CELEBRATION_DURATION_SECS: i64 = 10;
 /// 「黒い `█`（背景に溶けて見えない非空白文字）」に置換する
 const EMPTY: &str = "\x1b[30m\u{2588}\x1b[0m";
 
-pub fn run(storage: &Storage) {
+pub async fn run(storage: &Storage) {
     let mut pet = match storage.load_pet() {
         Ok(pet) => pet,
         Err(_) => return,
@@ -42,7 +42,7 @@ pub fn run(storage: &Storage) {
                     if crate::pet::PetState::should_regenerate_personality(
                         old_level, new_level, evolved,
                     ) {
-                        pet.personality = pet.generate_personality();
+                        pet.personality = pet.generate_personality().await;
                     }
                 }
             }
@@ -59,8 +59,6 @@ pub fn run(storage: &Storage) {
     let show_leveled_up = within_celebration_window(pet.leveled_up_at, now);
 
     if show_evolved || show_leveled_up {
-        // 進化 or レベルアップ演出: animated_art (sparkle 付き) + テーマ色で表示
-        // 空白は CC statusline の strip を避けるため黒 `█` に置換する
         let aa = crate::pet::render::animated_art(
             &pet.stage,
             &pet.archetype,
@@ -80,8 +78,6 @@ pub fn run(storage: &Storage) {
             "✨ レベルアップ！"
         };
 
-        // AA とステータスの間に空行（CC statusline に strip されないよう
-        // 見えない黒 `█` を 1 文字だけ置く）
         print!(
             "\n{EMPTY}\n{label} {emoji} {name} [{creature}] Lv.{lv} ♥{mood} 🍚{hunger} EXP:{exp}",
             name = pet.name,
@@ -90,7 +86,7 @@ pub fn run(storage: &Storage) {
             exp = pet.exp,
         );
     } else {
-        // 期限切れの timestamp を掃除（無駄書き込みを避けるため変化時のみ）
+        // 期限切れの timestamp を掃除
         let mut dirty = false;
         if pet.evolved_at.is_some() {
             pet.evolved_at = None;
@@ -132,63 +128,61 @@ mod tests {
     fn setup_with_pet() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
-        super::super::init::run(&storage);
+        super::super::init::run_sync_for_test(&storage);
         (dir, storage)
     }
 
-    #[test]
-    fn status_without_pet_outputs_nothing() {
+    #[tokio::test]
+    async fn status_without_pet_outputs_nothing() {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
-        run(&storage);
+        run(&storage).await;
     }
 
-    #[test]
-    fn status_with_pet_outputs_statusline() {
+    #[tokio::test]
+    async fn status_with_pet_outputs_statusline() {
         let (_dir, storage) = setup_with_pet();
-        run(&storage);
+        run(&storage).await;
     }
 
-    #[test]
-    fn status_clears_expired_evolved_timestamp() {
+    #[tokio::test]
+    async fn status_clears_expired_evolved_timestamp() {
         let (_dir, storage) = setup_with_pet();
 
-        // 10 秒以上前の timestamp を立てる
         let mut pet = storage.load_pet().unwrap();
         pet.evolved_at = Some(chrono::Utc::now() - chrono::Duration::seconds(30));
         storage.save_pet(&pet).unwrap();
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert!(pet.evolved_at.is_none());
     }
 
-    #[test]
-    fn status_keeps_recent_evolved_timestamp() {
+    #[tokio::test]
+    async fn status_keeps_recent_evolved_timestamp() {
         let (_dir, storage) = setup_with_pet();
 
-        // 3 秒前の timestamp → まだ演出中なのでクリアされない
         let ts = chrono::Utc::now() - chrono::Duration::seconds(3);
         let mut pet = storage.load_pet().unwrap();
         pet.evolved_at = Some(ts);
         storage.save_pet(&pet).unwrap();
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.evolved_at, Some(ts));
     }
 
-    #[test]
-    fn status_clears_expired_leveled_up_timestamp() {
+    #[tokio::test]
+    async fn status_clears_expired_leveled_up_timestamp() {
         let (_dir, storage) = setup_with_pet();
 
         let mut pet = storage.load_pet().unwrap();
         pet.leveled_up_at = Some(chrono::Utc::now() - chrono::Duration::seconds(30));
         storage.save_pet(&pet).unwrap();
 
-        run(&storage);
+        run(&storage).await;
 
         let pet = storage.load_pet().unwrap();
         assert!(pet.leveled_up_at.is_none());

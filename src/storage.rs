@@ -19,6 +19,7 @@ pub struct ActivityRecord {
     pub ts: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub struct Storage {
     base_dir: PathBuf,
 }

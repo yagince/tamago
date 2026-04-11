@@ -1,9 +1,9 @@
 use crate::pet::names::generate_name;
 use crate::storage::Storage;
 
-pub fn run(storage: &Storage, name: Option<&str>, ai: bool) {
+pub async fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let new_name = if ai {
-        generate_name()
+        generate_name().await
     } else {
         name.expect("名前を指定してください").to_string()
     };
@@ -25,14 +25,14 @@ mod tests {
     fn setup_with_pet() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
         let storage = Storage::new(dir.path());
-        super::super::init::run(&storage);
+        super::super::init::run_sync_for_test(&storage);
         (dir, storage)
     }
 
-    #[test]
-    fn name_changes_pet_name() {
+    #[tokio::test]
+    async fn name_changes_pet_name() {
         let (_dir, storage) = setup_with_pet();
-        run(&storage, Some("ピカチュウ"), false);
+        run(&storage, Some("ピカチュウ"), false).await;
 
         let pet = storage.load_pet().unwrap();
         assert_eq!(pet.name, "ピカチュウ");

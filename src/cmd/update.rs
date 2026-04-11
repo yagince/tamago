@@ -1,11 +1,11 @@
 const REPO: &str = "yagince/tamago";
 const API_URL: &str = "https://api.github.com/repos/yagince/tamago/releases/latest";
 
-pub fn run() {
+pub async fn run() {
     let current = env!("CARGO_PKG_VERSION");
     println!("現在のバージョン: v{current}");
 
-    let latest = match fetch_latest_version() {
+    let latest = match fetch_latest_version().await {
         Some(v) => v,
         None => {
             eprintln!("最新バージョンの取得に失敗しました");
@@ -22,37 +22,41 @@ pub fn run() {
     println!("新しいバージョンがあります: {latest}");
     println!("更新中...");
 
-    if let Err(e) = download_and_install(&latest) {
+    if let Err(e) = download_and_install(&latest).await {
         eprintln!("更新に失敗しました: {e}");
         eprintln!("手動でインストールしてください:");
         eprintln!("  brew upgrade tamago");
     }
 }
 
-fn fetch_latest_version() -> Option<String> {
-    let resp: serde_json::Value = reqwest::blocking::Client::new()
+async fn fetch_latest_version() -> Option<String> {
+    let resp: serde_json::Value = reqwest::Client::new()
         .get(API_URL)
         .header("User-Agent", "tamago-updater")
         .header("Accept", "application/vnd.github.v3+json")
         .send()
+        .await
         .ok()?
         .json()
+        .await
         .ok()?;
 
     resp["tag_name"].as_str().map(String::from)
 }
 
-fn download_and_install(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn download_and_install(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     let target = detect_target();
     let asset = format!("tamago-{tag}-{target}.tar.gz");
     let url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset}");
 
-    let bytes = reqwest::blocking::Client::new()
+    let bytes = reqwest::Client::new()
         .get(&url)
         .header("User-Agent", "tamago-updater")
-        .send()?
+        .send()
+        .await?
         .error_for_status()?
-        .bytes()?;
+        .bytes()
+        .await?;
 
     // tar.gz を Rust 側で展開
     let decoder = flate2::read::GzDecoder::new(&bytes[..]);

@@ -1,12 +1,12 @@
 use std::io;
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crossterm::ExecutableCommand;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use futures::StreamExt;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Gauge, Padding, Paragraph};
 
@@ -23,7 +23,7 @@ fn frame_hash(frame: u64, salt: u64) -> u64 {
     frame.wrapping_add(salt).wrapping_mul(2654435761) >> 16
 }
 
-pub fn run(storage: &Storage, message_interval_secs: u64) {
+pub async fn run(storage: &Storage, message_interval_secs: u64) {
     let _lock = storage.lock().expect("ロックの取得に失敗しました");
     let mut pet = storage
         .load_pet()
@@ -49,40 +49,42 @@ pub fn run(storage: &Storage, message_interval_secs: u64) {
 
     drop(_lock);
 
-    if let Err(e) = run_tui(storage, &pet, message_interval_secs) {
+    if let Err(e) = run_tui(storage, &pet, message_interval_secs).await {
         eprintln!("TUI エラー: {e}");
     }
 }
 
 const RELOAD_INTERVAL: Duration = Duration::from_secs(5);
 
-fn reload_pet(storage: &Storage) -> Option<PetState> {
+fn reload_pet_sync(storage: &Storage) -> Option<(PetState, bool)> {
     let _lock = storage.lock().ok()?;
     let mut pet = storage.load_pet().ok()?;
 
     let activities = storage.read_and_clear_activities().ok()?;
-    if !activities.is_empty() {
-        let now = chrono::Utc::now();
-        pet.apply_decay(now);
-        let old_stage = pet.stage.clone();
-        let old_level = pet.level();
-        pet.apply_activities(&activities);
-        while pet.try_evolve() {}
-        let evolved = pet.stage != old_stage;
-        if evolved {
-            pet.evolved_at = Some(now);
-        }
-        let new_level = pet.level();
-        if new_level > old_level {
-            pet.apply_level_up_stats(new_level - old_level);
-            if PetState::should_regenerate_personality(old_level, new_level, evolved) {
-                pet.personality = pet.generate_personality();
-            }
-        }
-        storage.save_pet(&pet).ok()?;
+    if activities.is_empty() {
+        return Some((pet, false));
     }
 
-    Some(pet)
+    let now = chrono::Utc::now();
+    pet.apply_decay(now);
+    let old_stage = pet.stage.clone();
+    let old_level = pet.level();
+    pet.apply_activities(&activities);
+    while pet.try_evolve() {}
+    let evolved = pet.stage != old_stage;
+    if evolved {
+        pet.evolved_at = Some(now);
+    }
+    let new_level = pet.level();
+    let needs_personality = if new_level > old_level {
+        pet.apply_level_up_stats(new_level - old_level);
+        PetState::should_regenerate_personality(old_level, new_level, evolved)
+    } else {
+        false
+    };
+    storage.save_pet(&pet).ok()?;
+
+    Some((pet, needs_personality))
 }
 
 fn build_aa(pet: &PetState) -> (Vec<String>, i16, i16) {
@@ -98,7 +100,7 @@ fn build_aa(pet: &PetState) -> (Vec<String>, i16, i16) {
     (lines, w, h)
 }
 
-fn run_tui(
+async fn run_tui(
     storage: &Storage,
     initial_pet: &PetState,
     message_interval_secs: u64,
@@ -111,103 +113,121 @@ fn run_tui(
     let (mut aa_lines, aa_w, aa_h) = build_aa(&pet);
 
     let mut state = AnimState::new(aa_w, aa_h, pet.hunger, pet.mood);
-    let mut last_tick = Instant::now();
-    let mut last_reload = Instant::now();
-    let message_interval = Duration::from_secs(message_interval_secs);
-    let mut last_message = Instant::now() - message_interval; // 初回すぐ発火
-    let use_claude = crate::claude::is_available();
-    let (claude_tx, claude_rx) = mpsc::channel::<String>();
+    let use_claude = crate::claude::is_available().await;
+    let (claude_tx, mut claude_rx) = tokio::sync::mpsc::channel::<String>(8);
+
     // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
     let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
 
+    let mut events = EventStream::new();
+    let mut tick_interval = tokio::time::interval(Duration::from_millis(TICK_MS));
+    let mut reload_interval = tokio::time::interval(RELOAD_INTERVAL);
+    let mut message_interval = tokio::time::interval(Duration::from_secs(message_interval_secs));
+    // 初回即発火させるため最初の tick を消費
+    tick_interval.tick().await;
+    reload_interval.tick().await;
+    message_interval.tick().await;
+
+    let mut aa_inner_size = (40u16, 16u16);
+
+    // 初回メッセージ生成
+    {
+        let activity = recent_activities.first();
+        let msg = generate_message(activity, &pet, state.frame);
+        state.message = Some(msg);
+        state.message_timer = MESSAGE_DISPLAY_FRAMES;
+
+        if use_claude && !recent_activities.is_empty() {
+            let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
+            spawn_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
+        }
+    }
+
     loop {
-        // Claude からの非同期セリフを受信
-        if let Ok(msg) = claude_rx.try_recv() {
-            state.message = Some(msg);
-            state.message_timer = MESSAGE_DISPLAY_FRAMES;
-        }
-
-        // セリフ更新
-        if last_message.elapsed() >= message_interval {
-            let activity = recent_activities.first();
-
-            // まずフォールバックを即時表示
-            let msg = generate_message(activity, &pet, state.frame);
-            state.message = Some(msg);
-            state.message_timer = MESSAGE_DISPLAY_FRAMES;
-
-            // Claude CLI がある場合は非同期で上書きを試みる
-            if use_claude && !recent_activities.is_empty() {
-                let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
-                try_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
-            }
-
-            last_message = Instant::now();
-        }
-
-        if last_reload.elapsed() >= RELOAD_INTERVAL {
-            // reload 前に直近 activity を保持
-            let peeked = storage.peek_latest_activities(5);
-            if !peeked.is_empty() {
-                recent_activities = peeked;
-            }
-            if let Some(new_pet) = reload_pet(storage) {
-                let evolved = new_pet.stage != pet.stage;
-                let aa_changed =
-                    new_pet.hunger != pet.hunger || new_pet.mood != pet.mood || evolved;
-
-                if evolved {
-                    let old_stage = pet.stage.clone();
-                    state.start_evolution(aa_lines.clone(), &old_stage, &new_pet.stage);
+        tokio::select! {
+            _ = tick_interval.tick() => {
+                // animation tick
+                if state.is_evolving() {
+                    state.tick_evolution();
+                } else {
+                    state.tick(aa_inner_size.0, aa_inner_size.1);
                 }
 
-                pet = new_pet;
-                state.hunger = pet.hunger;
-                state.mood = pet.mood;
-                if aa_changed {
-                    let (new_lines, new_w, new_h) = build_aa(&pet);
-                    aa_lines = new_lines;
-                    state.aa_w = new_w;
-                    state.aa_h = new_h;
+                // draw
+                let current_aa = state.current_aa(&aa_lines);
+                if state.is_evolving() {
+                    terminal.draw(|f| {
+                        draw_evolution(f, &state);
+                    })?;
+                } else {
+                    terminal.draw(|f| {
+                        aa_inner_size = draw(f, &pet, &current_aa, &state);
+                    })?;
                 }
             }
-            last_reload = Instant::now();
-        }
+            _ = reload_interval.tick() => {
+                // reload 前に直近 activity を保持
+                let peeked = storage.peek_latest_activities(5);
+                if !peeked.is_empty() {
+                    recent_activities = peeked;
+                }
 
-        let current_aa = state.current_aa(&aa_lines);
-        let mut aa_inner_size = (40u16, 16u16);
-        if state.is_evolving() {
-            terminal.draw(|f| {
-                draw_evolution(f, &state);
-            })?;
-        } else {
-            terminal.draw(|f| {
-                aa_inner_size = draw(f, &pet, &current_aa, &state);
-            })?;
-        }
+                let storage_clone = storage.clone();
+                if let Ok(Some((mut new_pet, needs_personality))) =
+                    tokio::task::spawn_blocking(move || reload_pet_sync(&storage_clone)).await
+                {
+                    if needs_personality {
+                        new_pet.personality = new_pet.generate_personality().await;
+                        let _ = storage.save_pet(&new_pet);
+                    }
+                    let evolved = new_pet.stage != pet.stage;
+                    let aa_changed =
+                        new_pet.hunger != pet.hunger || new_pet.mood != pet.mood || evolved;
 
-        let timeout = Duration::from_millis(TICK_MS).saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => break,
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            break;
-                        }
-                        _ => {}
+                    if evolved {
+                        let old_stage = pet.stage.clone();
+                        state.start_evolution(aa_lines.clone(), &old_stage, &new_pet.stage);
+                    }
+
+                    pet = new_pet;
+                    state.hunger = pet.hunger;
+                    state.mood = pet.mood;
+                    if aa_changed {
+                        let (new_lines, new_w, new_h) = build_aa(&pet);
+                        aa_lines = new_lines;
+                        state.aa_w = new_w;
+                        state.aa_h = new_h;
                     }
                 }
             }
-        }
+            _ = message_interval.tick() => {
+                let activity = recent_activities.first();
+                let msg = generate_message(activity, &pet, state.frame);
+                state.message = Some(msg);
+                state.message_timer = MESSAGE_DISPLAY_FRAMES;
 
-        if last_tick.elapsed() >= Duration::from_millis(TICK_MS) {
-            if state.is_evolving() {
-                state.tick_evolution();
-            } else {
-                state.tick(aa_inner_size.0, aa_inner_size.1);
+                if use_claude && !recent_activities.is_empty() {
+                    let cmds: Vec<&str> = recent_activities.iter().map(|r| r.cmd.as_str()).collect();
+                    spawn_claude_message(&pet.name, pet.level(), &cmds, claude_tx.clone());
+                }
             }
-            last_tick = Instant::now();
+            Some(msg) = claude_rx.recv() => {
+                state.message = Some(msg);
+                state.message_timer = MESSAGE_DISPLAY_FRAMES;
+            }
+            Some(Ok(event)) = events.next() => {
+                if let Event::Key(key) = event {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => break,
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -603,17 +623,27 @@ fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u6
     pick_message(&["...", "♪", "〜", "ふふっ", "いい天気だね"], frame)
 }
 
-fn try_claude_message(pet_name: &str, level: u64, cmds: &[&str], tx: mpsc::Sender<String>) {
+fn spawn_claude_message(
+    pet_name: &str,
+    level: u64,
+    cmds: &[&str],
+    tx: tokio::sync::mpsc::Sender<String>,
+) {
     let cmd_list = cmds.join(", ");
-    crate::claude::ClaudeRequest::new(format!(
+    let request = crate::claude::ClaudeRequest::new(format!(
         "ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。"
     ))
     .system(format!(
         "あなたは「{pet_name}」という名前のLv.{level}のターミナルペットです。\
         求められたセリフだけを出力してください。説明や補足は不要です。"
     ))
-    .max_chars(30)
-    .execute_async(tx);
+    .max_chars(30);
+
+    tokio::spawn(async move {
+        if let Some(msg) = request.execute().await {
+            let _ = tx.send(msg).await;
+        }
+    });
 }
 
 // ── Evolution cutscene ───────────────────────────────────────
@@ -637,7 +667,6 @@ fn draw_evolution(f: &mut Frame, state: &AnimState) {
 
     match phase {
         EvolutionPhase::Flash => {
-            // 画面全体を白くフラッシュ
             let brightness = if state.evolution_timer < 3 {
                 Color::White
             } else {
@@ -647,12 +676,10 @@ fn draw_evolution(f: &mut Frame, state: &AnimState) {
             f.render_widget(block, area);
         }
         EvolutionPhase::Sparkle => {
-            // 旧 AA + 大量キラキラ（虹色）
             let color = RAINBOW[(state.evolution_timer as usize) % RAINBOW.len()];
             let cx = area.width / 2;
             let cy = area.height / 2;
 
-            // 旧 AA を中央に描画
             for (i, line) in state.old_aa.iter().enumerate() {
                 let y = cy.saturating_sub(state.old_aa.len() as u16 / 2) + i as u16;
                 let x = cx.saturating_sub(line.chars().count() as u16 / 2);
@@ -664,7 +691,6 @@ fn draw_evolution(f: &mut Frame, state: &AnimState) {
                 }
             }
 
-            // キラキラを散らす
             let seed = state.evolution_timer.wrapping_mul(6364136223846793005);
             for i in 0..12 {
                 let s = seed.wrapping_add(i * 2971215073);
@@ -699,7 +725,6 @@ fn draw_evolution(f: &mut Frame, state: &AnimState) {
                 Rect::new(0, cy + 1, area.width, 1),
             );
 
-            // 背景キラキラ（少なめ）
             let seed = state.evolution_timer.wrapping_mul(2654435761);
             for i in 0..6 {
                 let s = seed.wrapping_add(i * 104729);
@@ -713,7 +738,6 @@ fn draw_evolution(f: &mut Frame, state: &AnimState) {
             }
         }
         EvolutionPhase::FadeOut => {
-            // テキストがフェードアウト（色を暗く）
             let cy = area.height / 2;
             let fade = if state.evolution_timer < 38 {
                 Color::Gray
@@ -845,11 +869,10 @@ fn draw_aa_area(
 
     // 吹き出し
     if let Some(ref msg) = state.message {
-        let inner_w = UnicodeWidthStr::width(msg.as_str()); // 表示幅（全角=2）
-        let bubble_w = inner_w + 4; // "│ " + msg + " │"
+        let inner_w = UnicodeWidthStr::width(msg.as_str());
+        let bubble_w = inner_w + 4;
         let pet_center_x = inner.x + state.x as u16 + state.aa_w as u16 / 2;
         let bx = pet_center_x.saturating_sub(bubble_w as u16 / 2);
-        // 右端に収まるよう clamp
         let bx = bx.min((inner.x + inner.width).saturating_sub(bubble_w as u16));
         let by = (inner.y + state.y as u16).saturating_sub(3);
 
@@ -923,15 +946,56 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
 
     f.render_widget(Paragraph::new(lines), inner);
 
-    // ステータスバーを Layout で描画（ラベル幅を固定してズレ防止）
-    let stats_y = inner.y + 6; // Paragraph の下（name+type+空+Lv+EXP+空 = 6行）
+    let stats_y = inner.y + 6;
     let stat_rows: &[(&str, usize, usize, Color, Color, Color)] = &[
-        ("HP", pet.hunger as usize, 100, Color::Green, Color::Yellow, Color::Red),
-        ("MP", pet.mood as usize, 100, Color::Blue, Color::Magenta, Color::Red),
-        ("開発", pet.dev_power as usize, stat_max, Color::Yellow, Color::Yellow, Color::Yellow),
-        ("賢さ", pet.wisdom as usize, stat_max, Color::Cyan, Color::Cyan, Color::Cyan),
-        ("笑い", pet.humor as usize, stat_max, Color::Green, Color::Green, Color::Green),
-        ("混沌", pet.chaos as usize, stat_max, Color::Magenta, Color::Magenta, Color::Magenta),
+        (
+            "HP",
+            pet.hunger as usize,
+            100,
+            Color::Green,
+            Color::Yellow,
+            Color::Red,
+        ),
+        (
+            "MP",
+            pet.mood as usize,
+            100,
+            Color::Blue,
+            Color::Magenta,
+            Color::Red,
+        ),
+        (
+            "開発",
+            pet.dev_power as usize,
+            stat_max,
+            Color::Yellow,
+            Color::Yellow,
+            Color::Yellow,
+        ),
+        (
+            "賢さ",
+            pet.wisdom as usize,
+            stat_max,
+            Color::Cyan,
+            Color::Cyan,
+            Color::Cyan,
+        ),
+        (
+            "笑い",
+            pet.humor as usize,
+            stat_max,
+            Color::Green,
+            Color::Green,
+            Color::Green,
+        ),
+        (
+            "混沌",
+            pet.chaos as usize,
+            stat_max,
+            Color::Magenta,
+            Color::Magenta,
+            Color::Magenta,
+        ),
     ];
 
     for (i, (label, val, max, high, mid, low)) in stat_rows.iter().enumerate() {
@@ -939,17 +1003,25 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
         if y >= inner.y + inner.height {
             break;
         }
-        // ラベル（固定 6 セル）
         let label_area = Rect::new(inner.x, y, 6, 1);
         f.render_widget(
             Paragraph::new(*label).style(Style::default().fg(*high).bold()),
             label_area,
         );
-        // バー
         let bar_area = Rect::new(inner.x + 6, y, inner.width.saturating_sub(12), 1);
-        let ratio = if *max > 0 { *val as f64 / *max as f64 } else { 0.0 };
+        let ratio = if *max > 0 {
+            *val as f64 / *max as f64
+        } else {
+            0.0
+        };
         let pct = (*val * 100).checked_div(*max).unwrap_or(0);
-        let color = if pct > 50 { *high } else if pct > 25 { *mid } else { *low };
+        let color = if pct > 50 {
+            *high
+        } else if pct > 25 {
+            *mid
+        } else {
+            *low
+        };
         f.render_widget(
             Gauge::default()
                 .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
@@ -957,7 +1029,6 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
                 .label(""),
             bar_area,
         );
-        // 数値
         let val_area = Rect::new(inner.x + inner.width - 5, y, 5, 1);
         f.render_widget(
             Paragraph::new(format!("{:>4}", val)).alignment(Alignment::Right),
@@ -965,7 +1036,6 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
         );
     }
 
-    // 性格テキスト
     let personality_y = stats_y + stat_rows.len() as u16 + 1;
     if !pet.personality.is_empty() && personality_y < inner.y + inner.height {
         f.render_widget(
@@ -975,7 +1045,6 @@ fn draw_status(f: &mut Frame, area: Rect, pet: &PetState) {
         );
     }
 }
-
 
 fn draw_category_bars(f: &mut Frame, area: Rect, pet: &PetState) {
     let block = Block::default()

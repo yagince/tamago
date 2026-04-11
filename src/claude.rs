@@ -1,7 +1,7 @@
 //! Claude CLI の呼び出しヘルパー。
-//! timeout コマンドに依存せず、Rust 側でタイムアウトを制御する。
+//! tokio::process で非同期実行し、tokio::time::timeout でタイムアウトを制御する。
 
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::Duration;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -51,68 +51,46 @@ impl ClaudeRequest {
         self
     }
 
-    /// Claude CLI を同期的に呼び出す。タイムアウトは Rust 側で制御。
-    pub fn execute(&self) -> Option<String> {
+    /// Claude CLI を非同期に呼び出す。タイムアウトは tokio::time::timeout で制御。
+    pub async fn execute(&self) -> Option<String> {
         let mut args = vec!["-p".to_string(), self.prompt.clone()];
         args.extend(["--model".to_string(), self.model.clone()]);
         if let Some(ref sys) = self.system_prompt {
             args.extend(["--system-prompt".to_string(), sys.clone()]);
         }
 
-        let mut child = Command::new("claude")
+        let child = tokio::process::Command::new("claude")
             .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .ok()?;
 
-        let start = std::time::Instant::now();
+        let output = match tokio::time::timeout(self.timeout, child.wait_with_output()).await {
+            Ok(Ok(output)) => output,
+            _ => return None,
+        };
 
-        // タイムアウト付きで完了を待つ
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {
-                    if start.elapsed() >= self.timeout {
-                        let _ = child.kill();
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(_) => break,
-            }
-        }
-
-        let output = child.wait_with_output().ok()?;
         let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if !msg.is_empty() && msg.chars().count() <= self.max_chars {
             Some(msg)
         } else if !msg.is_empty() {
-            // max_chars 超えたら切り詰め
             Some(msg.chars().take(self.max_chars).collect())
         } else {
             None
         }
     }
-
-    /// バックグラウンドスレッドで実行して結果を channel に送る
-    pub fn execute_async(self, tx: std::sync::mpsc::Sender<String>) {
-        std::thread::spawn(move || {
-            if let Some(msg) = self.execute() {
-                let _ = tx.send(msg);
-            }
-        });
-    }
 }
 
 /// Claude CLI が利用可能か確認（起動時に1回だけ呼ぶ）
-pub fn is_available() -> bool {
-    Command::new("claude")
+pub async fn is_available() -> bool {
+    tokio::process::Command::new("claude")
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
+        .await
         .map(|s| s.success())
         .unwrap_or(false)
 }
