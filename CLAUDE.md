@@ -14,6 +14,7 @@ cargo run                # 実行（= tamago メイン画面）
 cargo run -- <subcmd>    # サブコマンド実行（例: cargo run -- init）
 cargo test               # 全テスト実行
 cargo test <test_name>   # 単一テスト実行
+cargo test --features metal -- --ignored  # LLM 推論テスト（Metal GPU、要モデルDL済み）
 cargo clippy             # lint
 cargo fmt                # フォーマット
 cargo fmt -- --check     # フォーマットチェック
