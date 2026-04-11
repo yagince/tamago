@@ -21,12 +21,16 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
+            features: metal
           - target: x86_64-apple-darwin
             os: macos-latest
+            features: metal
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+            features: ""
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
+            features: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +67,13 @@ jobs:
             ${{ matrix.target }}-cargo-
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          FEATURES="${{ matrix.features }}"
+          if [ -n "$FEATURES" ]; then
+            cargo build --release --target ${{ matrix.target }} --features "$FEATURES"
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Package archive
         id: package

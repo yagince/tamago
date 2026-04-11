@@ -26,9 +26,7 @@ pub async fn run(storage: &Storage) {
     }
 
     let mut generator = llm::create_generator(&config, &storage.model_dir());
-    let name = llm::with_generator(&mut generator, |g| {
-        crate::pet::names::generate_name(g)
-    });
+    let name = llm::with_generator(&mut generator, |g| crate::pet::names::generate_name(g));
     let mut pet = PetState::new(&name, Utc::now());
     pet.personality = llm::with_generator(&mut generator, |g| pet.generate_personality(g));
     storage

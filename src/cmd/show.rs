@@ -33,8 +33,7 @@ pub async fn run(storage: &Storage) {
         if crate::pet::PetState::should_regenerate_personality(old_level, new_level, evolved) {
             let config = Config::load(storage.base_dir());
             let mut generator = llm::create_generator(&config, &storage.model_dir());
-            pet.personality =
-                llm::with_generator(&mut generator, |g| pet.generate_personality(g));
+            pet.personality = llm::with_generator(&mut generator, |g| pet.generate_personality(g));
         }
     }
 
