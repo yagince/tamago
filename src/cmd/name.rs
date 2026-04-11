@@ -5,9 +5,8 @@ use crate::storage::Storage;
 pub async fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let new_name = if ai {
         let model_dir = storage.model_dir();
-        let mut engine =
-            llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir)).ok();
-        generate_name(engine.as_mut())
+        let engine = llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir)).ok();
+        generate_name(engine.as_ref())
     } else {
         name.expect("名前を指定してください").to_string()
     };

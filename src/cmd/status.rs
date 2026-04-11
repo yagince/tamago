@@ -44,10 +44,9 @@ pub async fn run(storage: &Storage) {
                         old_level, new_level, evolved,
                     ) {
                         let model_dir = storage.model_dir();
-                        let mut engine =
-                            llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir))
-                                .ok();
-                        pet.personality = pet.generate_personality(engine.as_mut());
+                        let engine =
+                            llm::LlmEngine::load_from_gguf(&llm::model_path(&model_dir)).ok();
+                        pet.personality = pet.generate_personality(engine.as_ref());
                     }
                 }
             }

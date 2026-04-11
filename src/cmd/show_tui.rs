@@ -187,9 +187,9 @@ async fn run_tui(
                 {
                     if needs_personality {
                         if let Some(ref engine) = llm_engine {
-                            if let Ok(mut eng) = engine.lock() {
+                            if let Ok(eng) = engine.lock() {
                                 new_pet.personality =
-                                    new_pet.generate_personality(Some(&mut eng));
+                                    new_pet.generate_personality(Some(&eng));
                             }
                         } else {
                             new_pet.personality = new_pet.generate_personality(None);
@@ -673,7 +673,7 @@ fn spawn_llm_message(
     );
 
     tokio::task::spawn_blocking(move || {
-        if let Ok(mut eng) = engine.lock() {
+        if let Ok(eng) = engine.lock() {
             if let Some(msg) = eng.generate(&prompt, &system, 30) {
                 let _ = tx.blocking_send(msg);
             }

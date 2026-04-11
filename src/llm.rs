@@ -1,117 +1,98 @@
 //! ローカル LLM 推論エンジン。
-//! candle + GGUF で Gemma 3 等のモデルを CPU 推論する。
+//! llama-cpp-2 で GGUF モデルを CPU/GPU 推論する。
 
 use std::path::{Path, PathBuf};
 
-use candle_core::quantized::gguf_file;
-use candle_core::{Device, Tensor};
-use candle_transformers::generation::LogitsProcessor;
-use candle_transformers::models::quantized_gemma3::ModelWeights;
-use tokenizers::models::unigram::Unigram;
-use tokenizers::Tokenizer;
+use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::llama_backend::LlamaBackend;
+use llama_cpp_2::llama_batch::LlamaBatch;
+use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::sampling::LlamaSampler;
 
 const DEFAULT_REPO_ID: &str = "bartowski/google_gemma-3-1b-it-GGUF";
 const DEFAULT_FILENAME: &str = "google_gemma-3-1b-it-Q4_K_M.gguf";
 
-const TEMPERATURE: f64 = 0.8;
-const TOP_P: f64 = 0.9;
+const TEMPERATURE: f32 = 0.8;
+const TOP_P: f32 = 0.9;
+const TOP_K: i32 = 40;
 
 /// ローカル LLM エンジン
 pub struct LlmEngine {
-    model: ModelWeights,
-    tokenizer: Tokenizer,
-    device: Device,
-    stop_token_ids: Vec<u32>,
+    #[allow(dead_code)]
+    backend: LlamaBackend,
+    model: LlamaModel,
 }
 
 impl LlmEngine {
-    /// GGUF ファイルからモデルとトークナイザーを一括ロード
+    /// GGUF ファイルからモデルをロード
     pub fn load_from_gguf(gguf_path: &Path) -> anyhow::Result<Self> {
-        let device = Device::Cpu;
+        let backend = LlamaBackend::init()?;
+        let params = LlamaModelParams::default();
+        let model = LlamaModel::load_from_file(&backend, gguf_path, &params)?;
 
-        let mut file = std::fs::File::open(gguf_path)?;
-        let content = gguf_file::Content::read(&mut file)?;
-
-        // GGUF 内蔵トークナイザーを構築
-        let (tokenizer, stop_token_ids) = build_tokenizer_from_gguf(&content)?;
-
-        let model = ModelWeights::from_gguf(content, &mut file, &device)?;
-
-        Ok(Self {
-            model,
-            tokenizer,
-            device,
-            stop_token_ids,
-        })
+        Ok(Self { backend, model })
     }
 
-    /// テキスト生成（同期、CPU バウンド）
-    pub fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
+    /// テキスト生成（同期、CPU/GPU バウンド）
+    pub fn generate(&self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
         let formatted = format_prompt(system, prompt);
         self.generate_raw(&formatted, max_tokens)
     }
 
-    fn generate_raw(&mut self, prompt: &str, max_tokens: usize) -> Option<String> {
-        let encoding = self.tokenizer.encode(prompt, false).ok()?;
-        let token_ids: Vec<u32> = encoding.get_ids().to_vec();
-        let prompt_len = token_ids.len();
+    fn generate_raw(&self, prompt: &str, max_tokens: usize) -> Option<String> {
+        let tokens = self
+            .model
+            .str_to_token(prompt, llama_cpp_2::model::AddBos::Always)
+            .ok()?;
+
+        let ctx_params = LlamaContextParams::default().with_n_ctx(std::num::NonZeroU32::new(
+            (tokens.len() + max_tokens + 16) as u32,
+        ));
+        let mut ctx = self.model.new_context(&self.backend, ctx_params).ok()?;
+
+        let mut sampler = LlamaSampler::chain_simple([
+            LlamaSampler::top_k(TOP_K),
+            LlamaSampler::top_p(TOP_P, 1),
+            LlamaSampler::temp(TEMPERATURE),
+            LlamaSampler::dist(rand_seed()),
+        ]);
 
         // Prefill
-        let input = Tensor::new(token_ids.as_slice(), &self.device)
-            .ok()?
-            .unsqueeze(0)
-            .ok()?;
-        let logits = self.model.forward(&input, 0).ok()?;
-
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
-        let mut sampler = LogitsProcessor::new(seed, Some(TEMPERATURE), Some(TOP_P));
-
-        let mut generated_ids: Vec<u32> = Vec::new();
-
-        // 最初のトークン
-        let logits = logits.squeeze(0).ok()?;
-        let next_token = sampler.sample(&logits).ok()?;
-        if self.stop_token_ids.contains(&next_token) {
-            return None;
+        let mut batch = LlamaBatch::new(tokens.len(), 1);
+        for (i, &token) in tokens.iter().enumerate() {
+            let is_last = i == tokens.len() - 1;
+            batch.add(token, i as i32, &[0], is_last).ok()?;
         }
-        generated_ids.push(next_token);
+        ctx.decode(&mut batch).ok()?;
 
         // Auto-regressive 生成
-        let mut prev_token = next_token;
-        for step in 1..max_tokens {
-            let input = Tensor::new(&[prev_token], &self.device)
-                .ok()?
-                .unsqueeze(0)
-                .ok()?;
-            let logits = self.model.forward(&input, prompt_len + step).ok()?;
-            let logits = logits.squeeze(0).ok()?;
-            let next_token = sampler.sample(&logits).ok()?;
+        let mut generated: Vec<u8> = Vec::new();
+        let mut n_cur = tokens.len();
 
-            if self.stop_token_ids.contains(&next_token) {
+        for _ in 0..max_tokens {
+            let token = sampler.sample(&ctx, -1);
+            sampler.accept(token);
+
+            if self.model.is_eog_token(token) {
                 break;
             }
-            generated_ids.push(next_token);
-            prev_token = next_token;
+
+            let bytes = self
+                .model
+                .token_to_piece_bytes(token, 64, true, None)
+                .ok()?;
+            generated.extend_from_slice(&bytes);
+
+            batch.clear();
+            batch.add(token, n_cur as i32, &[0], true).ok()?;
+            ctx.decode(&mut batch).ok()?;
+            n_cur += 1;
         }
 
-        if generated_ids.is_empty() {
-            return None;
-        }
-
-        let text = self
-            .tokenizer
-            .decode(&generated_ids, true)
-            .ok()?;
-
-        // 特殊トークン文字列を除去
-        let text = text
+        let text = String::from_utf8_lossy(&generated)
             .replace("<end_of_turn>", "")
             .replace("<start_of_turn>", "")
-            .replace("<eos>", "")
-            .replace("<bos>", "")
             .trim()
             .to_string();
 
@@ -119,82 +100,16 @@ impl LlmEngine {
     }
 }
 
-/// GGUF メタデータの tokenizer.ggml.* からトークナイザーを構築
-fn build_tokenizer_from_gguf(
-    content: &gguf_file::Content,
-) -> anyhow::Result<(Tokenizer, Vec<u32>)> {
-    // トークン文字列リスト
-    let tokens = content
-        .metadata
-        .get("tokenizer.ggml.tokens")
-        .ok_or_else(|| anyhow::anyhow!("tokenizer.ggml.tokens が見つかりません"))?;
-    let tokens: Vec<String> = match tokens {
-        gguf_file::Value::Array(arr) => arr
-            .iter()
-            .map(|v| match v {
-                gguf_file::Value::String(s) => Ok(s.clone()),
-                _ => Err(anyhow::anyhow!("token is not string")),
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?,
-        _ => anyhow::bail!("tokenizer.ggml.tokens is not an array"),
-    };
-
-    // スコアリスト
-    let scores = content
-        .metadata
-        .get("tokenizer.ggml.scores")
-        .ok_or_else(|| anyhow::anyhow!("tokenizer.ggml.scores が見つかりません"))?;
-    let scores: Vec<f64> = match scores {
-        gguf_file::Value::Array(arr) => arr
-            .iter()
-            .map(|v| match v {
-                gguf_file::Value::F32(f) => Ok(*f as f64),
-                _ => Err(anyhow::anyhow!("score is not f32")),
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?,
-        _ => anyhow::bail!("tokenizer.ggml.scores is not an array"),
-    };
-
-    // UNK token ID
-    let unk_id = content
-        .metadata
-        .get("tokenizer.ggml.unknown_token_id")
-        .and_then(|v| v.to_u32().ok())
-        .map(|v| v as usize);
-
-    // EOS token ID
-    let eos_token_id = content
-        .metadata
-        .get("tokenizer.ggml.eos_token_id")
-        .and_then(|v| v.to_u32().ok())
-        .unwrap_or(1);
-
-    // vocab: Vec<(String, f64)>
-    let vocab: Vec<(String, f64)> = tokens
-        .into_iter()
-        .zip(scores)
-        .collect();
-
-    let unigram = Unigram::from(vocab, unk_id, true)
-        .map_err(|e| anyhow::anyhow!("Unigram 構築エラー: {e}"))?;
-
-    let tokenizer = Tokenizer::new(unigram);
-
-    // EOS + <end_of_turn> 等のストップトークン
-    let mut stop_ids = vec![eos_token_id];
-    // <end_of_turn> のトークン ID を検索して追加
-    if let Some(eot_id) = tokenizer.token_to_id("<end_of_turn>") {
-        if !stop_ids.contains(&eot_id) {
-            stop_ids.push(eot_id);
-        }
-    }
-
-    Ok((tokenizer, stop_ids))
-}
-
 /// Gemma 3 のチャットテンプレート
 fn format_prompt(system: &str, user: &str) -> String {
     format!("<start_of_turn>user\n{system}\n{user}<end_of_turn>\n<start_of_turn>model\n")
+}
+
+fn rand_seed() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos()
 }
 
 /// モデルファイルのパス
@@ -217,7 +132,6 @@ pub async fn download_model(model_dir: &Path) -> anyhow::Result<()> {
     let repo = api.model(DEFAULT_REPO_ID.to_string());
     let downloaded = repo.get(DEFAULT_FILENAME).await?;
 
-    // hf-hub はキャッシュにダウンロードするので、シンボリックリンクで参照
     if downloaded != model_dest {
         #[cfg(unix)]
         {
@@ -236,9 +150,8 @@ pub async fn download_model(model_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// テスト用: デフォルトのモデルパスを返す（~/.config/tamago/models/）
 #[cfg(test)]
-pub fn default_model_dir() -> PathBuf {
+fn default_model_dir() -> PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -267,14 +180,13 @@ mod tests {
     }
 
     #[test]
-    fn load_model_and_tokenizer() {
+    fn load_model() {
         let _engine = load_engine();
-        // ロード成功 = GGUF 内蔵トークナイザー構築も成功
     }
 
     #[test]
     fn generate_short_japanese() {
-        let mut engine = load_engine();
+        let engine = load_engine();
         let result = engine.generate(
             "一言挨拶して。",
             "あなたはターミナルペットです。短いセリフだけ出力してください。",
@@ -288,7 +200,7 @@ mod tests {
 
     #[test]
     fn generate_pet_personality() {
-        let mut engine = load_engine();
+        let engine = load_engine();
         let result = engine.generate(
             "名前:ピカドン Lv.10 開発力:5 賢さ:3 おもしろさ:8 カオスさ:2\nこのペットの性格を30文字以内で。",
             "あなたはターミナルペットの性格設定を生成するAIです。性格テキストだけを出力してください。",
@@ -302,7 +214,7 @@ mod tests {
 
     #[test]
     fn generate_pet_name() {
-        let mut engine = load_engine();
+        let engine = load_engine();
         let result = engine.generate(
             "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
             "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",

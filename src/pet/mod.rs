@@ -354,7 +354,7 @@ impl PetState {
         old_level / 10 != new_level / 10
     }
 
-    pub fn generate_personality(&self, engine: Option<&mut crate::llm::LlmEngine>) -> String {
+    pub fn generate_personality(&self, engine: Option<&crate::llm::LlmEngine>) -> String {
         if let Some(engine) = engine {
             if let Some(msg) = self.try_llm_personality(engine) {
                 return msg;
@@ -363,7 +363,7 @@ impl PetState {
         self.fallback_personality()
     }
 
-    fn try_llm_personality(&self, engine: &mut crate::llm::LlmEngine) -> Option<String> {
+    fn try_llm_personality(&self, engine: &crate::llm::LlmEngine) -> Option<String> {
         let mut top_cats: Vec<_> = self.category_exp.iter().collect();
         top_cats.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
         let top3: Vec<String> = top_cats
