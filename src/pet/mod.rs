@@ -358,10 +358,10 @@ impl PetState {
         &self,
         engine: Option<&mut dyn crate::llm::TextGenerator>,
     ) -> String {
-        if let Some(engine) = engine {
-            if let Some(msg) = self.try_llm_personality(engine) {
-                return msg;
-            }
+        if let Some(engine) = engine
+            && let Some(msg) = self.try_llm_personality(engine)
+        {
+            return msg;
         }
         self.fallback_personality()
     }

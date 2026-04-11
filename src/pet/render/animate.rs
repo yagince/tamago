@@ -101,7 +101,7 @@ fn add_decorations(aa: &str, seed: usize, hunger: u8, mood: u8, exp: u64) -> Str
 /// マイクロ表情: 確率でまばたきや口の微変化
 fn apply_micro_expression(aa: &str, seed: usize) -> String {
     // 20% の確率でまばたき（目の行の一部を変更）
-    let blink = seed % 5 == 0;
+    let blink = seed.is_multiple_of(5);
     if !blink {
         return aa.to_string();
     }
@@ -121,19 +121,19 @@ fn apply_micro_expression(aa: &str, seed: usize) -> String {
                 .iter()
                 .rposition(|&c| c == '█' || c == '▀' || c == '▄');
 
-            if let (Some(first), Some(last)) = (first_block, last_block) {
-                if last - first > 4 {
-                    // 内部の ▄ を空白にする（輪郭は残す）
-                    let mut new_chars = chars.clone();
-                    for i in (first + 1)..last {
-                        if new_chars[i] == '▄' {
-                            new_chars[i] = ' ';
-                        }
+            if let (Some(first), Some(last)) = (first_block, last_block)
+                && last - first > 4
+            {
+                // 内部の ▄ を空白にする（輪郭は残す）
+                let mut new_chars = chars.clone();
+                for ch in new_chars.iter_mut().take(last).skip(first + 1) {
+                    if *ch == '▄' {
+                        *ch = ' ';
                     }
-                    result.push(new_chars.into_iter().collect::<String>());
-                    blinked = true;
-                    continue;
                 }
+                result.push(new_chars.into_iter().collect::<String>());
+                blinked = true;
+                continue;
             }
         }
         result.push(line.to_string());

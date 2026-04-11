@@ -232,8 +232,8 @@ async fn run_tui(
                 state.message_timer = MESSAGE_DISPLAY_FRAMES;
             }
             Some(Ok(event)) = events.next() => {
-                if let Event::Key(key) = event {
-                    if key.kind == KeyEventKind::Press {
+                if let Event::Key(key) = event
+                    && key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => break,
                             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -242,7 +242,6 @@ async fn run_tui(
                             _ => {}
                         }
                     }
-                }
             }
         }
     }
@@ -497,7 +496,7 @@ impl AnimState {
         self.sparkles.clear();
 
         // 約5秒に1回だけ表示（チカチカ防止）
-        if self.hash(53) % 42 != 0 {
+        if !self.hash(53).is_multiple_of(42) {
             return;
         }
 
@@ -573,18 +572,18 @@ fn apply_blink(lines: &[String]) -> Vec<String> {
             let first_block = chars.iter().position(|&c| matches!(c, '█' | '▀' | '▄'));
             let last_block = chars.iter().rposition(|&c| matches!(c, '█' | '▀' | '▄'));
 
-            if let (Some(first), Some(last)) = (first_block, last_block) {
-                if last - first > 4 {
-                    let mut new_chars = chars.clone();
-                    for i in (first + 1)..last {
-                        if new_chars[i] == '▄' {
-                            new_chars[i] = ' ';
-                        }
+            if let (Some(first), Some(last)) = (first_block, last_block)
+                && last - first > 4
+            {
+                let mut new_chars = chars.clone();
+                for ch in new_chars.iter_mut().take(last).skip(first + 1) {
+                    if *ch == '▄' {
+                        *ch = ' ';
                     }
-                    result.push(new_chars.into_iter().collect());
-                    blinked = true;
-                    continue;
                 }
+                result.push(new_chars.into_iter().collect());
+                blinked = true;
+                continue;
             }
         }
         result.push(line.clone());
@@ -673,10 +672,10 @@ fn spawn_llm_message(
     );
 
     tokio::task::spawn_blocking(move || {
-        if let Ok(mut eng) = engine.lock() {
-            if let Some(msg) = eng.as_mut().generate(&prompt, &system, 30) {
-                let _ = tx.blocking_send(msg);
-            }
+        if let Ok(mut eng) = engine.lock()
+            && let Some(msg) = eng.as_mut().generate(&prompt, &system, 30)
+        {
+            let _ = tx.blocking_send(msg);
         }
     });
 }
@@ -855,8 +854,8 @@ fn draw_aa_area(
             continue;
         }
 
-        let mut col = 0u16;
-        for ch in line.chars() {
+        for (col, ch) in line.chars().enumerate() {
+            let col = col as u16;
             if x + col >= inner.x + inner.width {
                 break;
             }
@@ -869,7 +868,6 @@ fn draw_aa_area(
                 Paragraph::new(ch.to_string()).style(style),
                 Rect::new(x + col, y, 1, 1),
             );
-            col += 1;
         }
     }
 

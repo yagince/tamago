@@ -94,8 +94,8 @@ impl Storage {
             .create(true)
             .append(true)
             .open(self.activity_file())?;
-        let mut locked = Flock::lock(file, FlockArg::LockExclusive)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.1))?;
+        let mut locked =
+            Flock::lock(file, FlockArg::LockExclusive).map_err(|e| io::Error::other(e.1))?;
         locked.write_all(line.as_bytes())?;
         // drop で自動 unlock
         Ok(())
@@ -110,8 +110,8 @@ impl Storage {
         }
 
         let file = OpenOptions::new().read(true).write(true).open(&path)?;
-        let locked = Flock::lock(file, FlockArg::LockExclusive)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.1))?;
+        let locked =
+            Flock::lock(file, FlockArg::LockExclusive).map_err(|e| io::Error::other(e.1))?;
 
         let mut records = Vec::new();
         let reader = io::BufReader::new(&*locked);
@@ -162,10 +162,10 @@ impl Storage {
     pub fn lock(&self) -> io::Result<Flock<std::fs::File>> {
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .write(true)
             .open(self.lock_file())?;
-        Flock::lock(file, FlockArg::LockExclusive)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.1))
+        Flock::lock(file, FlockArg::LockExclusive).map_err(|e| io::Error::other(e.1))
     }
 }
 

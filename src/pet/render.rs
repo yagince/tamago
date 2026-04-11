@@ -52,11 +52,11 @@ fn select_art(stage: &Stage, archetype: &Option<Archetype>, name: &str) -> &'sta
         Stage::Teen => &teen::TEEN[h % teen::TEEN.len()],
         Stage::Adult => {
             let arts: &[PetArt] = match archetype {
-                Some(Archetype::Versionist) => &adult::ADULT_VERSIONIST,
-                Some(Archetype::AiMage) => &adult::ADULT_AIMAGE,
-                Some(Archetype::CloudDweller) => &adult::ADULT_CLOUD,
-                Some(Archetype::AncientMage) => &adult::ADULT_ANCIENT,
-                Some(Archetype::Generalist) | None => &adult::ADULT_GENERALIST,
+                Some(Archetype::Versionist) => adult::ADULT_VERSIONIST,
+                Some(Archetype::AiMage) => adult::ADULT_AIMAGE,
+                Some(Archetype::CloudDweller) => adult::ADULT_CLOUD,
+                Some(Archetype::AncientMage) => adult::ADULT_ANCIENT,
+                Some(Archetype::Generalist) | None => adult::ADULT_GENERALIST,
             };
             &arts[h % arts.len()]
         }

@@ -21,19 +21,15 @@ impl Default for Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LlmBackend {
     /// ローカル LLM (candle + Qwen2.5)
+    #[default]
     Local,
     /// Claude CLI
     Claude,
     /// LLM なし（フォールバックのみ）
     None,
-}
-
-impl Default for LlmBackend {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 impl Config {
@@ -46,6 +42,7 @@ impl Config {
         }
     }
 
+    #[allow(dead_code)]
     pub fn save(&self, config_dir: &Path) -> std::io::Result<()> {
         let path = config_dir.join("config.json");
         let json = serde_json::to_string_pretty(self)

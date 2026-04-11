@@ -1,4 +1,4 @@
-/// AA のビットマップ往復で表情を動的に変更するエンジン
+//! AA のビットマップ往復で表情を動的に変更するエンジン
 
 /// 2値ピクセルグリッド
 struct Grid {
@@ -121,7 +121,9 @@ fn find_interior_features(grid: &Grid) -> Vec<(usize, usize)> {
 }
 
 /// 内部特徴を目と口に分類
-fn classify_features(features: &[(usize, usize)]) -> (Vec<(usize, usize)>, Vec<(usize, usize)>) {
+type FeaturePoints = Vec<(usize, usize)>;
+
+fn classify_features(features: &[(usize, usize)]) -> (FeaturePoints, FeaturePoints) {
     if features.is_empty() {
         return (vec![], vec![]);
     }

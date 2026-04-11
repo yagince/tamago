@@ -24,42 +24,41 @@ pub async fn run(storage: &Storage) {
     let activity_size = std::fs::metadata(storage.activity_file())
         .map(|m| m.len())
         .unwrap_or(0);
-    if activity_size >= AGGREGATE_THRESHOLD {
-        if let Ok(_lock) = storage.lock() {
-            pet.apply_decay(now);
+    if activity_size >= AGGREGATE_THRESHOLD
+        && let Ok(_lock) = storage.lock()
+    {
+        pet.apply_decay(now);
 
-            if let Ok(activities) = storage.read_and_clear_activities() {
-                let old_stage = pet.stage.clone();
-                let old_level = pet.level();
-                pet.apply_activities(&activities);
-                while pet.try_evolve() {}
-                if pet.stage != old_stage {
-                    pet.evolved_at = Some(now);
-                }
-                let new_level = pet.level();
-                let evolved = pet.stage != old_stage;
-                if new_level > old_level {
-                    pet.leveled_up_at = Some(now);
-                    pet.apply_level_up_stats(new_level - old_level);
-                    if crate::pet::PetState::should_regenerate_personality(
-                        old_level, new_level, evolved,
-                    ) {
-                        let config = Config::load(storage.base_dir());
-                        let personality = {
-                            let mut generator =
-                                llm::create_generator(&config, &storage.model_dir());
-                            match &mut generator {
-                                Some(g) => pet.generate_personality(Some(g.as_mut())),
-                                None => pet.generate_personality(None),
-                            }
-                        };
-                        pet.personality = personality;
-                    }
+        if let Ok(activities) = storage.read_and_clear_activities() {
+            let old_stage = pet.stage.clone();
+            let old_level = pet.level();
+            pet.apply_activities(&activities);
+            while pet.try_evolve() {}
+            if pet.stage != old_stage {
+                pet.evolved_at = Some(now);
+            }
+            let new_level = pet.level();
+            let evolved = pet.stage != old_stage;
+            if new_level > old_level {
+                pet.leveled_up_at = Some(now);
+                pet.apply_level_up_stats(new_level - old_level);
+                if crate::pet::PetState::should_regenerate_personality(
+                    old_level, new_level, evolved,
+                ) {
+                    let config = Config::load(storage.base_dir());
+                    let personality = {
+                        let mut generator = llm::create_generator(&config, &storage.model_dir());
+                        match &mut generator {
+                            Some(g) => pet.generate_personality(Some(g.as_mut())),
+                            None => pet.generate_personality(None),
+                        }
+                    };
+                    pet.personality = personality;
                 }
             }
-
-            let _ = storage.save_pet(&pet);
         }
+
+        let _ = storage.save_pet(&pet);
     }
 
     let emoji = pet.emoji();
