@@ -178,6 +178,34 @@ fn select_device() -> Device {
     Device::Cpu
 }
 
+pub fn device_info() -> DeviceInfo {
+    let compiled_features: Vec<&'static str> = {
+        #[allow(unused_mut)]
+        let mut v = Vec::new();
+        #[cfg(feature = "metal")]
+        v.push("metal");
+        #[cfg(feature = "cuda")]
+        v.push("cuda");
+        v
+    };
+
+    let runtime = match select_device() {
+        Device::Cpu => "CPU".to_string(),
+        Device::Cuda(_) => "CUDA".to_string(),
+        Device::Metal(_) => "Metal".to_string(),
+    };
+
+    DeviceInfo {
+        compiled_features,
+        runtime,
+    }
+}
+
+pub struct DeviceInfo {
+    pub compiled_features: Vec<&'static str>,
+    pub runtime: String,
+}
+
 fn format_prompt(system: &str, user: &str) -> String {
     format!(
         "<|im_start|>system\n{system}<|im_end|>\n\

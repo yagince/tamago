@@ -13,6 +13,8 @@ pub enum LlmCommand {
     Claude,
     /// LLM を無効化（フォールバックのみ）
     None,
+    /// 推論に使うデバイス (GPU/CPU) を表示
+    Device,
 }
 
 pub async fn run(storage: &Storage, command: &LlmCommand) {
@@ -44,6 +46,16 @@ pub async fn run(storage: &Storage, command: &LlmCommand) {
         LlmCommand::None => {
             config.llm = LlmBackend::None;
             save_and_print(storage, &config, "none");
+        }
+        LlmCommand::Device => {
+            let info = crate::llm::local::device_info();
+            let features = if info.compiled_features.is_empty() {
+                "(なし)".to_string()
+            } else {
+                info.compiled_features.join(", ")
+            };
+            println!("コンパイル時 GPU feature: {features}");
+            println!("推論デバイス (ランタイム): {}", info.runtime);
         }
     }
 }
