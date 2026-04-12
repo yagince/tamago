@@ -107,10 +107,11 @@ tamago hook statusline >> ~/.claude/statusline-command.sh
 
 #### ローカル LLM の GPU サポート
 
-| 環境 | バックエンド | Homebrew |
-|------|------------|----------|
-| macOS (Apple Silicon / Intel) | Metal | ✅ 有効 |
-| Linux | CUDA | ❌ CPU のみ（自前ビルドで有効化） |
+| 環境 | バックエンド | Homebrew | Release バイナリ |
+|------|------------|----------|----------------|
+| macOS (Apple Silicon / Intel) | Metal | ✅ 有効 | ✅ |
+| Linux (musl) | — | ❌ CPU のみ | ✅ CPU のみ |
+| Linux x86_64 + CUDA | CUDA | ❌ | ✅ `-cuda` サフィックスのアーカイブ |
 
 > [!NOTE]
 > **GPU が無い環境では `claude` か `none` を推奨。** CPU でローカル LLM を回すと推論が数十秒かかり、TUI の応答性が悪くなります。
@@ -132,7 +133,25 @@ tamago llm device
 
 ##### Linux + CUDA
 
-Homebrew / cargo install のデフォルトビルドは musl 静的リンクのため CPU 推論のみ。GPU を使うには自前ビルドが必要:
+オプション 1: **公式リリースの `-cuda` アーカイブを使う**（x86_64 のみ）
+
+[Releases](https://github.com/yagince/tamago/releases) から `tamago-vX.Y.Z-x86_64-unknown-linux-gnu-cuda.tar.gz` をダウンロード:
+
+```bash
+VERSION=0.3.0
+curl -L -o tamago-cuda.tar.gz \
+  https://github.com/yagince/tamago/releases/download/v$VERSION/tamago-v$VERSION-x86_64-unknown-linux-gnu-cuda.tar.gz
+tar -xzf tamago-cuda.tar.gz
+sudo install tamago-v$VERSION-x86_64-unknown-linux-gnu-cuda/tamago /usr/local/bin/
+```
+
+要件: NVIDIA ドライバ + CUDA 12.x ランタイムライブラリ (`libcudart.so.12`, `libcublas.so.12`)。
+
+---
+
+オプション 2: **自前ビルド**（aarch64 や Homebrew 版のカスタムビルド）
+
+Homebrew / musl 版 は CPU 推論のみ。GPU を使うには自前ビルドが必要:
 
 **事前要件:**
 - NVIDIA GPU + ドライバ（`nvidia-smi` が動くこと）

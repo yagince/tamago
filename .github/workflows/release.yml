@@ -23,15 +23,23 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             features: metal
+            suffix: ""
           - target: x86_64-apple-darwin
             os: macos-latest
             features: metal
+            suffix: ""
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             features: ""
+            suffix: ""
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
             features: ""
+            suffix: ""
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            features: cuda
+            suffix: "-cuda"
     steps:
       - uses: actions/checkout@v5
 
@@ -50,6 +58,20 @@ jobs:
         if: contains(matrix.target, 'linux-musl')
         run: sudo apt-get install -y build-essential
 
+      - name: Install build deps for linux-gnu
+        if: contains(matrix.target, 'linux-gnu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Install CUDA Toolkit
+        if: matrix.features == 'cuda'
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.4.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev", "cudart-dev"]'
+
       - name: Cache cargo registry
         uses: actions/cache@v5
         with:
@@ -57,9 +79,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ matrix.target }}-${{ matrix.features }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ matrix.target }}-cargo-
+            ${{ matrix.target }}-${{ matrix.features }}-cargo-
 
       - name: Install cmake
         if: contains(matrix.target, 'linux-musl')
@@ -80,7 +102,7 @@ jobs:
         id: package
         shell: bash
         run: |
-          name="tamago-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="tamago-${GITHUB_REF_NAME}-${{ matrix.target }}${{ matrix.suffix }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/tamago" "dist/$name/"
           cp README.md LICENSE 2>/dev/null || true
@@ -93,7 +115,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: tamago-${{ matrix.target }}
+          name: tamago-${{ matrix.target }}${{ matrix.suffix }}
           path: |
             ${{ steps.package.outputs.archive }}
             ${{ steps.package.outputs.sha256 }}
