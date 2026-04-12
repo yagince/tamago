@@ -95,11 +95,13 @@ tamago hook statusline >> ~/.claude/statusline-command.sh
 
 ### LLM バックエンド
 
+デフォルトは `claude`（Claude CLI）。
+
 | コマンド | 説明 |
 |----------|------|
 | `tamago llm show` | 現在の LLM バックエンドを表示 |
+| `tamago llm claude` | Claude CLI に切り替え（デフォルト、要 Claude Code） |
 | `tamago llm local` | ローカル LLM (candle + Qwen2.5) に切り替え（初回はモデル DL） |
-| `tamago llm claude` | Claude CLI に切り替え |
 | `tamago llm none` | LLM を無効化（テンプレフォールバックのみ） |
 | `tamago llm device` | 推論に使うデバイス (GPU/CPU) を表示 |
 

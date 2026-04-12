@@ -14,7 +14,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            llm: LlmBackend::Local,
+            llm: LlmBackend::Claude,
         }
     }
 }
@@ -23,9 +23,9 @@ impl Default for Config {
 #[serde(rename_all = "lowercase")]
 pub enum LlmBackend {
     /// ローカル LLM (candle + Qwen2.5)
-    #[default]
     Local,
     /// Claude CLI
+    #[default]
     Claude,
     /// LLM なし（フォールバックのみ）
     None,
@@ -55,27 +55,27 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn default_is_local() {
+    fn default_is_claude() {
         let config = Config::default();
-        assert_eq!(config.llm, LlmBackend::Local);
+        assert_eq!(config.llm, LlmBackend::Claude);
     }
 
     #[test]
     fn load_missing_file_returns_default() {
         let dir = TempDir::new().unwrap();
         let config = Config::load(dir.path());
-        assert_eq!(config.llm, LlmBackend::Local);
+        assert_eq!(config.llm, LlmBackend::Claude);
     }
 
     #[test]
     fn save_and_load_roundtrip() {
         let dir = TempDir::new().unwrap();
         let config = Config {
-            llm: LlmBackend::Claude,
+            llm: LlmBackend::Local,
         };
         config.save(dir.path()).unwrap();
         let loaded = Config::load(dir.path());
-        assert_eq!(loaded.llm, LlmBackend::Claude);
+        assert_eq!(loaded.llm, LlmBackend::Local);
     }
 
     #[test]
