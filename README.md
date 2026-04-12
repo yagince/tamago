@@ -59,22 +59,55 @@ tamago hook bash >> ~/.bashrc
 tamago hook statusline >> ~/.claude/statusline-command.sh
 ```
 
-## 使い方
+## コマンドリファレンス
 
-```bash
-tamago           # メイン画面（集計 + AA + ステータス）
-tamago show      # TUI アニメーション画面
-tamago status    # statusline 用ワンライナー
-tamago name ピカ # 改名
-tamago name --ai # Claude に名前を考えさせる
-tamago reset     # データリセット
-```
+### 基本
+
+| コマンド | 説明 |
+|----------|------|
+| `tamago` | メイン画面（集計 + AA + ステータス）。引数なしのデフォルト動作 |
+| `tamago init` | 初期セットアップ。卵を生成してガイドを表示 |
+| `tamago reset` | 全データを削除して初期化しなおす |
+| `tamago update` | 最新バージョンに自己更新 |
+
+### 表示
+
+| コマンド | 説明 |
+|----------|------|
+| `tamago show` | ドラクエ風 TUI アニメーション画面（Claude がセリフを生成） |
+| `tamago show --message-interval <秒>` | セリフの更新間隔を指定（デフォルト: 30 秒） |
+| `tamago status` | statusline 用ワンライナー（emoji + 名前 + 種族 + Lv + mood + hunger + EXP） |
+
+### 命名
+
+| コマンド | 説明 |
+|----------|------|
+| `tamago name <名前>` | 指定名に改名 |
+| `tamago name --ai` | LLM に名前を考えさせる |
+
+### シェルフック
+
+| コマンド | 説明 |
+|----------|------|
+| `tamago hook zsh` | zsh 用フックスクリプトを stdout に出力 |
+| `tamago hook bash` | bash 用フックスクリプトを stdout に出力 |
+| `tamago hook statusline` | Claude Code statusline 用スクリプトを stdout に出力 |
+
+### LLM バックエンド
+
+| コマンド | 説明 |
+|----------|------|
+| `tamago llm show` | 現在の LLM バックエンドを表示 |
+| `tamago llm local` | ローカル LLM (candle + Qwen2.5) に切り替え（初回はモデル DL） |
+| `tamago llm claude` | Claude CLI に切り替え |
+| `tamago llm none` | LLM を無効化（テンプレフォールバックのみ） |
 
 ### Claude Code スキル
 
-```bash
-tamago skill install   # Claude Code Agent Skill をインストール
-```
+| コマンド | 説明 |
+|----------|------|
+| `tamago skill install` | Claude Code Agent Skill をユーザーグローバルにインストール |
+| `tamago skill install --project` | プロジェクトローカル (`.claude/skills/`) にインストール |
 
 インストール後、Claude Code で「ペットを見せて」「pet status」などで呼び出せます。
 
