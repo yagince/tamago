@@ -1,6 +1,8 @@
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::Mutex;
 
 use crossterm::ExecutableCommand;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
@@ -38,7 +40,7 @@ pub async fn run(storage: &Storage, message_interval_secs: u64) {
         .expect("activity の読み込みに失敗しました");
 
     let now = chrono::Utc::now();
-    pet.grow(now, &activities, None);
+    pet.grow(now, &activities, None).await;
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
@@ -52,7 +54,7 @@ pub async fn run(storage: &Storage, message_interval_secs: u64) {
 
 const RELOAD_INTERVAL: Duration = Duration::from_secs(5);
 
-fn reload_pet_sync(storage: &Storage) -> Option<(PetState, bool)> {
+async fn reload_pet(storage: &Storage) -> Option<(PetState, bool)> {
     let _lock = storage.lock().ok()?;
     let mut pet = storage.load_pet().ok()?;
 
@@ -62,7 +64,7 @@ fn reload_pet_sync(storage: &Storage) -> Option<(PetState, bool)> {
     }
 
     let now = chrono::Utc::now();
-    let result = pet.grow(now, &activities, None);
+    let result = pet.grow(now, &activities, None).await;
     let needs_personality = result.needs_personality;
     storage.save_pet(&pet).ok()?;
 
@@ -160,18 +162,14 @@ async fn run_tui(
                     recent_activities = peeked;
                 }
 
-                let storage_clone = storage.clone();
-                if let Ok(Some((mut new_pet, needs_personality))) =
-                    tokio::task::spawn_blocking(move || reload_pet_sync(&storage_clone)).await
-                {
+                if let Some((mut new_pet, needs_personality)) = reload_pet(storage).await {
                     if needs_personality {
                         if let Some(ref engine) = llm_engine {
-                            if let Ok(mut eng) = engine.lock() {
-                                new_pet.personality =
-                                    new_pet.generate_personality(Some(eng.as_mut()));
-                            }
+                            let mut eng = engine.lock().await;
+                            new_pet.personality =
+                                new_pet.generate_personality(Some(eng.as_mut())).await;
                         } else {
-                            new_pet.personality = new_pet.generate_personality(None);
+                            new_pet.personality = new_pet.generate_personality(None).await;
                         }
                         let _ = storage.save_pet(&new_pet);
                     }
@@ -669,11 +667,10 @@ fn spawn_llm_message(
         cha = pet.chaos,
     );
 
-    Some(tokio::task::spawn_blocking(move || {
-        if let Ok(mut eng) = engine.lock()
-            && let Some(msg) = eng.as_mut().generate(&prompt, &system, 30)
-        {
-            let _ = tx.blocking_send(msg);
+    Some(tokio::spawn(async move {
+        let mut eng = engine.lock().await;
+        if let Some(msg) = eng.as_mut().generate(&prompt, &system, 30).await {
+            let _ = tx.send(msg).await;
         }
     }))
 }

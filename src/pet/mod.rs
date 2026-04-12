@@ -305,7 +305,7 @@ impl PetState {
 
     /// アクティビティ集計 → 進化 → レベルアップの一連処理。
     /// show / status 両方から呼ばれる共通ロジック。
-    pub fn grow(
+    pub async fn grow(
         &mut self,
         now: DateTime<Utc>,
         activities: &[crate::storage::ActivityRecord],
@@ -334,7 +334,7 @@ impl PetState {
 
         let needs_personality = Self::should_regenerate_personality(old_level, new_level, evolved);
         if needs_personality {
-            self.personality = self.generate_personality(engine);
+            self.personality = self.generate_personality(engine).await;
         }
 
         GrowResult {
@@ -402,19 +402,22 @@ impl PetState {
         old_level / 10 != new_level / 10
     }
 
-    pub fn generate_personality(
+    pub async fn generate_personality(
         &self,
         engine: Option<&mut dyn crate::llm::TextGenerator>,
     ) -> String {
         if let Some(engine) = engine
-            && let Some(msg) = self.try_llm_personality(engine)
+            && let Some(msg) = self.try_llm_personality(engine).await
         {
             return msg;
         }
         self.fallback_personality()
     }
 
-    fn try_llm_personality(&self, engine: &mut dyn crate::llm::TextGenerator) -> Option<String> {
+    async fn try_llm_personality(
+        &self,
+        engine: &mut dyn crate::llm::TextGenerator,
+    ) -> Option<String> {
         let mut top_cats: Vec<_> = self.category_exp.iter().collect();
         top_cats.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
         let top3: Vec<String> = top_cats
@@ -423,22 +426,24 @@ impl PetState {
             .map(|(k, v)| format!("{:?}:{}", k, v))
             .collect();
 
-        engine.generate(
-            &format!(
-                "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
+        engine
+            .generate(
+                &format!(
+                    "名前:{} Lv.{} 開発力:{} 賢さ:{} おもしろさ:{} カオスさ:{} 得意:{}\n\
                 このペットの性格を30文字以内で。",
-                self.name,
-                self.level(),
-                self.dev_power,
-                self.wisdom,
-                self.humor,
-                self.chaos,
-                top3.join(",")
-            ),
-            "あなたはターミナルペットの性格設定を生成するAIです。\
+                    self.name,
+                    self.level(),
+                    self.dev_power,
+                    self.wisdom,
+                    self.humor,
+                    self.chaos,
+                    top3.join(",")
+                ),
+                "あなたはターミナルペットの性格設定を生成するAIです。\
             求められた性格テキストだけを出力してください。説明や補足は不要です。",
-            30,
-        )
+                30,
+            )
+            .await
     }
 
     pub(crate) fn fallback_personality(&self) -> String {
@@ -900,20 +905,19 @@ mod tests {
         assert!(PetState::should_regenerate_personality(5, 6, true));
     }
 
-    #[test]
-    fn personality_fallback_not_empty() {
+    #[tokio::test]
+    async fn personality_fallback_not_empty() {
         let now = Utc::now();
         let pet = PetState::new("test", now);
-        let p = pet.generate_personality(None);
+        let p = pet.generate_personality(None).await;
         assert!(!p.is_empty());
     }
 
-    #[test]
-    fn grow_sets_leveled_up_at_on_level_up() {
+    #[tokio::test]
+    async fn grow_sets_leveled_up_at_on_level_up() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
         assert_eq!(pet.level(), 1);
-        // exp 1000 → Lv.5 程度
         let activities: Vec<_> = (0..50)
             .map(|_| crate::storage::ActivityRecord {
                 cmd: "git commit".into(),
@@ -922,17 +926,16 @@ mod tests {
                 ts: now,
             })
             .collect();
-        let result = pet.grow(now, &activities, None);
+        let result = pet.grow(now, &activities, None).await;
         assert!(pet.level() > 1);
         assert!(result.leveled_up);
         assert_eq!(pet.leveled_up_at, Some(now));
     }
 
-    #[test]
-    fn grow_sets_evolved_at_on_evolution() {
+    #[tokio::test]
+    async fn grow_sets_evolved_at_on_evolution() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
-        // Egg→Baby に必要な exp 5000
         let activities: Vec<_> = (0..250)
             .map(|_| crate::storage::ActivityRecord {
                 cmd: "git commit".into(),
@@ -941,17 +944,17 @@ mod tests {
                 ts: now,
             })
             .collect();
-        let result = pet.grow(now, &activities, None);
+        let result = pet.grow(now, &activities, None).await;
         assert!(result.evolved);
         assert_eq!(pet.evolved_at, Some(now));
         assert_eq!(pet.stage, Stage::Baby);
     }
 
-    #[test]
-    fn grow_no_change_with_empty_activities() {
+    #[tokio::test]
+    async fn grow_no_change_with_empty_activities() {
         let now = Utc::now();
         let mut pet = PetState::new("test", now);
-        let result = pet.grow(now, &[], None);
+        let result = pet.grow(now, &[], None).await;
         assert!(!result.evolved);
         assert!(!result.leveled_up);
         assert_eq!(pet.evolved_at, None);

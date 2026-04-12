@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0.102"
+async-trait = "0.1"
 candle-core = "0.10.2"
 candle-nn = "0.10.2"
 candle-transformers = "0.10.2"

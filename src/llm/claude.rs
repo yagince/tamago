@@ -1,8 +1,9 @@
 //! Claude CLI バックエンド。
-//! `claude` コマンドを非同期プロセスとして呼び出す。
 
 use std::process::Stdio;
 use std::time::Duration;
+
+use async_trait::async_trait;
 
 use super::TextGenerator;
 
@@ -22,45 +23,25 @@ impl ClaudeCli {
         }
     }
 
-    fn execute(&self, prompt: &str, system: &str, max_chars: usize) -> Option<String> {
-        use std::io::Read;
-
-        let args = vec![
-            "-p".to_string(),
-            prompt.to_string(),
-            "--model".to_string(),
-            self.model.clone(),
-            "--system-prompt".to_string(),
-            system.to_string(),
-        ];
-
-        let mut child = std::process::Command::new("claude")
-            .args(&args)
+    async fn execute(&self, prompt: &str, system: &str, max_chars: usize) -> Option<String> {
+        let mut cmd = tokio::process::Command::new("claude");
+        cmd.arg("-p")
+            .arg(prompt)
+            .arg("--model")
+            .arg(&self.model)
+            .arg("--system-prompt")
+            .arg(system)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()
+            .kill_on_drop(true);
+
+        let child = cmd.spawn().ok()?;
+        let output = tokio::time::timeout(self.timeout, child.wait_with_output())
+            .await
+            .ok()?
             .ok()?;
 
-        // stdout を先に取り出して非同期で読む
-        let mut stdout = child.stdout.take()?;
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        let handle = std::thread::spawn(move || {
-            let mut buf = String::new();
-            let _ = stdout.read_to_string(&mut buf);
-            let _ = done_tx.send(());
-            buf
-        });
-
-        // タイムアウト待ち
-        match done_rx.recv_timeout(self.timeout) {
-            Ok(()) => {}
-            Err(_) => {
-                let _ = child.kill();
-            }
-        }
-        let _ = child.wait();
-
-        let msg = handle.join().ok()?.trim().to_string();
+        let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if msg.is_empty() {
             None
@@ -72,8 +53,9 @@ impl ClaudeCli {
     }
 }
 
+#[async_trait]
 impl TextGenerator for ClaudeCli {
-    fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
-        self.execute(prompt, system, max_tokens)
+    async fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
+        self.execute(prompt, system, max_tokens).await
     }
 }

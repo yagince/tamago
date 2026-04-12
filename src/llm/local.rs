@@ -1,7 +1,9 @@
 //! ローカル LLM 推論 (candle + quantized_qwen2)。
+//! Actor パターン: std::thread がモデルを所有し、channel 経由で推論リクエストを受ける。
 
 use std::path::{Path, PathBuf};
 
+use async_trait::async_trait;
 use candle_core::quantized::gguf_file;
 use candle_core::{Device, Tensor};
 use candle_transformers::generation::LogitsProcessor;
@@ -20,15 +22,61 @@ const TOP_P: f64 = 0.9;
 const REPEAT_PENALTY: f32 = 1.3;
 const REPEAT_LAST_N: usize = 64;
 
+struct GenerateRequest {
+    prompt: String,
+    system: String,
+    max_tokens: usize,
+    response_tx: tokio::sync::oneshot::Sender<Option<String>>,
+}
+
 pub struct LocalLlm {
+    request_tx: std::sync::mpsc::Sender<GenerateRequest>,
+}
+
+impl LocalLlm {
+    pub fn load(model_path: &Path, tokenizer_path: &Path) -> anyhow::Result<Self> {
+        // ロードは同期で実行（失敗を即検出するため）。
+        // 成功したら Actor スレッドを起動し、以降のリクエストを処理させる。
+        let mut inner = LocalLlmInner::load(model_path, tokenizer_path)?;
+        let (request_tx, request_rx) = std::sync::mpsc::channel::<GenerateRequest>();
+
+        std::thread::spawn(move || {
+            while let Ok(req) = request_rx.recv() {
+                let formatted = format_prompt(&req.system, &req.prompt);
+                let result = inner.generate_raw(&formatted, req.max_tokens);
+                let _ = req.response_tx.send(result);
+            }
+        });
+
+        Ok(Self { request_tx })
+    }
+}
+
+#[async_trait]
+impl TextGenerator for LocalLlm {
+    async fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.request_tx
+            .send(GenerateRequest {
+                prompt: prompt.to_string(),
+                system: system.to_string(),
+                max_tokens,
+                response_tx,
+            })
+            .ok()?;
+        response_rx.await.ok().flatten()
+    }
+}
+
+struct LocalLlmInner {
     model: ModelWeights,
     tokenizer: Tokenizer,
     device: Device,
     eos_token_ids: Vec<u32>,
 }
 
-impl LocalLlm {
-    pub fn load(model_path: &Path, tokenizer_path: &Path) -> anyhow::Result<Self> {
+impl LocalLlmInner {
+    fn load(model_path: &Path, tokenizer_path: &Path) -> anyhow::Result<Self> {
         let device = select_device();
 
         let mut file = std::fs::File::open(model_path)?;
@@ -115,13 +163,6 @@ impl LocalLlm {
             .to_string();
 
         if text.is_empty() { None } else { Some(text) }
-    }
-}
-
-impl TextGenerator for LocalLlm {
-    fn generate(&mut self, prompt: &str, system: &str, max_tokens: usize) -> Option<String> {
-        let formatted = format_prompt(system, prompt);
-        self.generate_raw(&formatted, max_tokens)
     }
 }
 
@@ -220,61 +261,69 @@ pub fn ensure_test_model() -> (PathBuf, PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use tokio::sync::{Mutex, OnceCell};
 
-    fn engine() -> &'static Mutex<LocalLlm> {
-        static ENGINE: OnceLock<Mutex<LocalLlm>> = OnceLock::new();
-        ENGINE.get_or_init(|| {
-            let (model_path, tok_path) = ensure_test_model();
-            Mutex::new(LocalLlm::load(&model_path, &tok_path).expect("モデルのロードに失敗"))
-        })
+    async fn engine() -> &'static Mutex<LocalLlm> {
+        static ENGINE: OnceCell<Mutex<LocalLlm>> = OnceCell::const_new();
+        ENGINE
+            .get_or_init(|| async {
+                let (model_path, tok_path) = ensure_test_model();
+                Mutex::new(LocalLlm::load(&model_path, &tok_path).expect("モデルのロードに失敗"))
+            })
+            .await
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn load_model() {
-        let _engine = engine().lock().unwrap();
+    async fn load_model() {
+        let _engine = engine().await.lock().await;
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn generate_short_japanese() {
-        let mut engine = engine().lock().unwrap();
-        let result = engine.generate(
-            "一言挨拶して。",
-            "あなたはターミナルペットです。短いセリフだけ出力してください。",
-            20,
-        );
+    async fn generate_short_japanese() {
+        let mut engine = engine().await.lock().await;
+        let result = engine
+            .generate(
+                "一言挨拶して。",
+                "あなたはターミナルペットです。短いセリフだけ出力してください。",
+                20,
+            )
+            .await;
         assert!(result.is_some(), "生成結果が None");
         let text = result.unwrap();
         assert!(!text.is_empty(), "空文字列が返された");
         println!("生成結果: {text}");
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn generate_pet_personality() {
-        let mut engine = engine().lock().unwrap();
-        let result = engine.generate(
-            "名前:ピカドン Lv.10 開発力:5 賢さ:3 おもしろさ:8 カオスさ:2\nこのペットの性格を30文字以内で。",
-            "あなたはターミナルペットの性格設定を生成するAIです。性格テキストだけを出力してください。",
-            30,
-        );
+    async fn generate_pet_personality() {
+        let mut engine = engine().await.lock().await;
+        let result = engine
+            .generate(
+                "名前:ピカドン Lv.10 開発力:5 賢さ:3 おもしろさ:8 カオスさ:2\nこのペットの性格を30文字以内で。",
+                "あなたはターミナルペットの性格設定を生成するAIです。性格テキストだけを出力してください。",
+                30,
+            )
+            .await;
         assert!(result.is_some(), "性格生成が None");
         let text = result.unwrap();
         assert!(!text.is_empty(), "空文字列が返された");
         println!("性格: {text}");
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn generate_pet_name() {
-        let mut engine = engine().lock().unwrap();
-        let result = engine.generate(
-            "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
-            "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
-            10,
-        );
+    async fn generate_pet_name() {
+        let mut engine = engine().await.lock().await;
+        let result = engine
+            .generate(
+                "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
+                "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
+                10,
+            )
+            .await;
         assert!(result.is_some(), "名前生成が None");
         let text = result.unwrap();
         assert!(!text.is_empty(), "空文字列が返された");

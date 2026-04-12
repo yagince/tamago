@@ -16,7 +16,10 @@ pub async fn run(storage: &Storage) {
     let now = chrono::Utc::now();
     let config = Config::load(storage.base_dir());
     let mut generator = llm::create_generator(&config, &storage.model_dir());
-    let result = llm::with_generator(&mut generator, |g| pet.grow(now, &activities, g));
+    let result = match generator {
+        Some(ref mut g) => pet.grow(now, &activities, Some(&mut **g)).await,
+        None => pet.grow(now, &activities, None).await,
+    };
 
     storage
         .save_pet(&pet)

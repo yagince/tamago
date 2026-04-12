@@ -26,9 +26,16 @@ pub async fn run(storage: &Storage) {
     }
 
     let mut generator = llm::create_generator(&config, &storage.model_dir());
-    let name = llm::with_generator(&mut generator, |g| crate::pet::names::generate_name(g));
+    let name = match generator {
+        Some(ref mut g) => crate::pet::names::generate_name(Some(&mut **g)).await,
+        None => crate::pet::names::generate_name(None).await,
+    };
     let mut pet = PetState::new(&name, Utc::now());
-    pet.personality = llm::with_generator(&mut generator, |g| pet.generate_personality(g));
+    let personality = match generator {
+        Some(ref mut g) => pet.generate_personality(Some(&mut **g)).await,
+        None => pet.generate_personality(None).await,
+    };
+    pet.personality = personality;
     storage
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");

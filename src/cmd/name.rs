@@ -7,7 +7,10 @@ pub async fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let new_name = if ai {
         let config = Config::load(storage.base_dir());
         let mut generator = llm::create_generator(&config, &storage.model_dir());
-        llm::with_generator(&mut generator, |g| generate_name(g))
+        match generator {
+            Some(ref mut g) => generate_name(Some(&mut **g)).await,
+            None => generate_name(None).await,
+        }
     } else {
         name.expect("名前を指定してください").to_string()
     };

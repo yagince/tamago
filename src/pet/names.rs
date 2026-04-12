@@ -106,18 +106,22 @@ const SUFFIXES: &[&str] = &[
     "コウ",
 ];
 
-pub fn generate_name(engine: Option<&mut dyn crate::llm::TextGenerator>) -> String {
-    if let Some(engine) = engine
-        && let Some(name) = engine.generate(
-            "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
-            "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
-            10,
-        ) {
+pub async fn generate_name(engine: Option<&mut dyn crate::llm::TextGenerator>) -> String {
+    if let Some(engine) = engine {
+        let name = engine
+            .generate(
+                "ターミナルペットの名前を1つだけ考えて。ポケモンっぽいカタカナの名前で、名前だけを出力して。",
+                "あなたはターミナルペットの名前を考えるAIです。名前だけを出力してください。",
+                10,
+            )
+            .await;
+        if let Some(name) = name {
             let name = name.trim().to_string();
             if !name.is_empty() && name.len() <= 30 {
                 return name;
             }
         }
+    }
     random_name()
 }
 
