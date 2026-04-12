@@ -101,6 +101,61 @@ tamago hook statusline >> ~/.claude/statusline-command.sh
 | `tamago llm local` | ローカル LLM (candle + Qwen2.5) に切り替え（初回はモデル DL） |
 | `tamago llm claude` | Claude CLI に切り替え |
 | `tamago llm none` | LLM を無効化（テンプレフォールバックのみ） |
+| `tamago llm device` | 推論に使うデバイス (GPU/CPU) を表示 |
+
+#### ローカル LLM の GPU サポート
+
+| 環境 | バックエンド | Homebrew |
+|------|------------|----------|
+| macOS (Apple Silicon / Intel) | Metal | ✅ 有効 |
+| Linux | CUDA | ❌ CPU のみ（自前ビルドで有効化） |
+
+> [!NOTE]
+> **GPU が無い環境では `claude` か `none` を推奨。** CPU でローカル LLM を回すと推論が数十秒かかり、TUI の応答性が悪くなります。
+>
+> ```bash
+> tamago llm claude  # Claude CLI を使う（要 Claude Code）
+> tamago llm none    # LLM 無効、固定テンプレートのみ
+> ```
+
+##### macOS
+
+Homebrew 版は Metal feature を有効化済み。追加設定不要:
+
+```bash
+tamago llm device
+# コンパイル時 GPU feature: metal
+# 推論デバイス (ランタイム): Metal
+```
+
+##### Linux + CUDA
+
+Homebrew / cargo install のデフォルトビルドは musl 静的リンクのため CPU 推論のみ。GPU を使うには自前ビルドが必要:
+
+**事前要件:**
+- NVIDIA GPU + ドライバ
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.x（`nvcc` が PATH にあること）
+- cuBLAS（CUDA Toolkit に同梱）
+
+**ビルド:**
+
+```bash
+# NVCC が見えるか確認
+nvcc --version
+
+# cuda feature で install
+cargo install --git https://github.com/yagince/tamago.git --features cuda
+```
+
+**確認:**
+
+```bash
+tamago llm device
+# コンパイル時 GPU feature: cuda
+# 推論デバイス (ランタイム): CUDA
+```
+
+`推論デバイス: CPU` と出る場合はドライバ未検出 or CUDA Toolkit のバージョン不一致の可能性。`nvidia-smi` で GPU が見えるか、`nvcc --version` と dirver の対応を確認してください。
 
 ### Claude Code スキル
 
