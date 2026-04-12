@@ -133,21 +133,62 @@ tamago llm device
 Homebrew / cargo install のデフォルトビルドは musl 静的リンクのため CPU 推論のみ。GPU を使うには自前ビルドが必要:
 
 **事前要件:**
-- NVIDIA GPU + ドライバ
+- NVIDIA GPU + ドライバ（`nvidia-smi` が動くこと）
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.x（`nvcc` が PATH にあること）
 - cuBLAS（CUDA Toolkit に同梱）
+
+**NVIDIA ドライバのインストール:**
+
+```bash
+# Ubuntu / Debian
+sudo ubuntu-drivers autoinstall   # 推奨ドライバを自動選択
+# または明示版: sudo apt install nvidia-driver-550
+sudo reboot
+
+# Arch
+sudo pacman -S nvidia
+
+# Fedora / RHEL
+sudo dnf install akmod-nvidia   # RPM Fusion 必要
+```
+
+再起動後 `nvidia-smi` で GPU が見えることを確認。
+
+**CUDA Toolkit のインストール:**
+
+ディストロ公式パッケージはバージョンが古い場合があるため、[NVIDIA 公式](https://developer.nvidia.com/cuda-downloads) の手順推奨:
+
+```bash
+# 例: Ubuntu 22.04 / CUDA 12.4 の場合
+wget https://developer.download.nvidia.com/compute/cuda/12.4.0/local_installers/cuda-repo-ubuntu2204-12-4-local_12.4.0-550.54.14-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu2204-12-4-local_*.deb
+sudo cp /var/cuda-repo-ubuntu2204-12-4-local/cuda-*-keyring.gpg /usr/share/keyrings/
+sudo apt update
+sudo apt install cuda-toolkit-12-4
+
+# PATH 設定（~/.bashrc 等に）
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+```
+
+Arch なら `sudo pacman -S cuda` で PATH も自動。
+
+**確認:**
+
+```bash
+nvidia-smi              # ドライバ & GPU 認識
+nvcc --version          # CUDA Toolkit
+```
+
+両方動くことを確認してから次へ進んでください。
 
 **ビルド:**
 
 ```bash
-# NVCC が見えるか確認
-nvcc --version
-
-# cuda feature で install
 cargo install --git https://github.com/yagince/tamago.git --features cuda
 ```
 
-**確認:**
+**動作確認:**
 
 ```bash
 tamago llm device
@@ -155,7 +196,7 @@ tamago llm device
 # 推論デバイス (ランタイム): CUDA
 ```
 
-`推論デバイス: CPU` と出る場合はドライバ未検出 or CUDA Toolkit のバージョン不一致の可能性。`nvidia-smi` で GPU が見えるか、`nvcc --version` と dirver の対応を確認してください。
+`推論デバイス: CPU` と出る場合はドライバ未検出 or CUDA Toolkit のバージョン不一致の可能性。`nvidia-smi` と `nvcc --version` の対応バージョンを確認してください。
 
 ### Claude Code スキル
 
