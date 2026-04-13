@@ -40,6 +40,13 @@ pub async fn run(storage: &Storage) {
         .save_pet(&pet)
         .expect("pet.json の保存に失敗しました");
 
+    tracing::info!(
+        "ペット作成: name={}, stage={:?}, llm={:?}",
+        pet.name,
+        pet.stage,
+        config.llm
+    );
+
     print_guide(storage, &name);
 }
 

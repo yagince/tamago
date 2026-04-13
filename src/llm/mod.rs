@@ -27,14 +27,19 @@ pub fn create_generator(config: &Config, model_dir: &Path) -> Option<Box<dyn Tex
     }
     #[cfg(not(test))]
     match config.llm {
-        LlmBackend::Local => {
-            let engine = local::LocalLlm::load(
-                &local::model_path(model_dir),
-                &local::tokenizer_path(model_dir),
-            )
-            .ok()?;
-            Some(Box::new(engine))
-        }
+        LlmBackend::Local => match local::LocalLlm::load(
+            &local::model_path(model_dir),
+            &local::tokenizer_path(model_dir),
+        ) {
+            Ok(engine) => {
+                tracing::info!("LocalLLM ロード成功");
+                Some(Box::new(engine))
+            }
+            Err(e) => {
+                tracing::error!("LocalLLM ロード失敗: {e}");
+                None
+            }
+        },
         LlmBackend::Claude => Some(Box::new(claude::ClaudeCli::new())),
         LlmBackend::None => None,
     }

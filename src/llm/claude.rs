@@ -37,11 +37,24 @@ impl ClaudeCli {
             .stderr(Stdio::null())
             .kill_on_drop(true);
 
-        let child = cmd.spawn().ok()?;
-        let output = tokio::time::timeout(self.timeout, child.wait_with_output())
-            .await
-            .ok()?
-            .ok()?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Claude CLI 起動失敗: {e}");
+                return None;
+            }
+        };
+        let output = match tokio::time::timeout(self.timeout, child.wait_with_output()).await {
+            Err(_) => {
+                tracing::warn!("Claude CLI タイムアウト ({}s)", self.timeout.as_secs());
+                return None;
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Claude CLI 実行エラー: {e}");
+                return None;
+            }
+            Ok(Ok(o)) => o,
+        };
 
         let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
