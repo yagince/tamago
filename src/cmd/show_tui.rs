@@ -659,8 +659,7 @@ fn spawn_llm_message(
         .map(|c| sanitize_cmd_for_prompt(c))
         .collect::<Vec<_>>()
         .join(", ");
-    let prompt =
-        format!("ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。");
+    let prompt = format!("ユーザーの直近のコマンド: {cmd_list}。20文字以内で一言リアクション。");
 
     let personality_hint = if pet.personality.is_empty() {
         String::new()
