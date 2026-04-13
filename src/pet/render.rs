@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn egg_has_patterns() {
-        assert!(egg::EGG.len() >= 1);
+        assert!(!egg::EGG.is_empty());
     }
 
     #[test]
