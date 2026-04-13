@@ -27,6 +27,8 @@ pub fn init(base_dir: &Path) {
         .with_writer(non_blocking)
         .with_ansi(false)
         .with_target(false)
+        .with_file(true)
+        .with_line_number(true)
         .try_init();
 }
 
