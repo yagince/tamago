@@ -1,5 +1,6 @@
 //! Claude CLI バックエンド。
 
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -7,19 +8,21 @@ use async_trait::async_trait;
 
 use super::TextGenerator;
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MODEL: &str = "sonnet";
 
 pub struct ClaudeCli {
     model: String,
     timeout: Duration,
+    workdir: PathBuf,
 }
 
 impl ClaudeCli {
-    pub fn new() -> Self {
+    pub fn new(workdir: PathBuf) -> Self {
         Self {
             model: DEFAULT_MODEL.to_string(),
             timeout: DEFAULT_TIMEOUT,
+            workdir,
         }
     }
 
@@ -33,6 +36,11 @@ impl ClaudeCli {
             .arg(system)
             .arg("--allowedTools")
             .arg("")
+            .arg("--no-session-persistence")
+            .arg("--disable-slash-commands")
+            .arg("--effort")
+            .arg("low")
+            .current_dir(&self.workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);

@@ -29,7 +29,7 @@ pub async fn run(storage: &Storage) {
     {
         if let Ok(activities) = storage.read_and_clear_activities() {
             let config = Config::load(storage.base_dir());
-            let mut generator = llm::create_generator(&config, &storage.model_dir());
+            let mut generator = llm::create_generator(&config, storage);
             match generator {
                 Some(ref mut g) => {
                     pet.grow(now, &activities, Some(&mut **g)).await;

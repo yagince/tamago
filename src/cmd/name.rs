@@ -6,7 +6,7 @@ use crate::storage::Storage;
 pub async fn run(storage: &Storage, name: Option<&str>, ai: bool) {
     let new_name = if ai {
         let config = Config::load(storage.base_dir());
-        let mut generator = llm::create_generator(&config, &storage.model_dir());
+        let mut generator = llm::create_generator(&config, storage);
         match generator {
             Some(ref mut g) => generate_name(Some(&mut **g)).await,
             None => generate_name(None).await,

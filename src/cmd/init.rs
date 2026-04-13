@@ -25,7 +25,7 @@ pub async fn run(storage: &Storage) {
         }
     }
 
-    let mut generator = llm::create_generator(&config, &storage.model_dir());
+    let mut generator = llm::create_generator(&config, storage);
     let name = match generator {
         Some(ref mut g) => crate::pet::names::generate_name(Some(&mut **g)).await,
         None => crate::pet::names::generate_name(None).await,

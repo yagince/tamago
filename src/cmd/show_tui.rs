@@ -101,7 +101,7 @@ async fn run_tui(
     // LLM エンジン（config に基づいて選択）
     let config = Config::load(storage.base_dir());
     let llm_engine: Option<Arc<Mutex<Box<dyn TextGenerator>>>> =
-        llm::create_generator(&config, &storage.model_dir()).map(|e| Arc::new(Mutex::new(e)));
+        llm::create_generator(&config, storage).map(|e| Arc::new(Mutex::new(e)));
 
     let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
     let mut llm_task: Option<tokio::task::JoinHandle<()>> = None;
