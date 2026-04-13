@@ -40,6 +40,7 @@ impl ClaudeCli {
             .arg("--disable-slash-commands")
             .arg("--effort")
             .arg("low")
+            .arg("--strict-mcp-config")
             .current_dir(&self.workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
