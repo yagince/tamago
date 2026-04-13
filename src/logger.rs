@@ -29,7 +29,18 @@ pub fn init(base_dir: &Path) {
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
+        .with_timer(JstTimer)
         .try_init();
+}
+
+struct JstTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for JstTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        let jst = chrono::FixedOffset::east_opt(9 * 3600).unwrap();
+        let now = chrono::Utc::now().with_timezone(&jst);
+        write!(w, "{}", now.format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+    }
 }
 
 struct RotatingWriter {
