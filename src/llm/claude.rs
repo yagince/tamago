@@ -31,6 +31,8 @@ impl ClaudeCli {
             .arg(&self.model)
             .arg("--system-prompt")
             .arg(system)
+            .arg("--allowedTools")
+            .arg("")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
