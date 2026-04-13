@@ -41,6 +41,8 @@ impl ClaudeCli {
             .arg("--effort")
             .arg("low")
             .arg("--strict-mcp-config")
+            .arg("--setting-sources")
+            .arg("local")
             .current_dir(&self.workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
