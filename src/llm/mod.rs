@@ -4,6 +4,7 @@
 #[cfg_attr(test, allow(dead_code))]
 pub mod claude;
 pub mod local;
+pub mod message;
 
 use std::path::Path;
 
