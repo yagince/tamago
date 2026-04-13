@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crossterm::ExecutableCommand;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    EnterAlternateScreen, LeaveAlternateScreen, SetTitle, disable_raw_mode, enable_raw_mode,
 };
 use futures::StreamExt;
 use ratatui::prelude::*;
@@ -91,6 +91,7 @@ async fn run_tui(
 ) -> io::Result<()> {
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
+    io::stdout().execute(SetTitle(env!("CARGO_PKG_NAME")))?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     let mut pet = initial_pet.clone();
