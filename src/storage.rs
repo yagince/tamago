@@ -10,12 +10,20 @@ use crate::pet::{Category, PetState};
 
 const PET_FILE: &str = "pet.json";
 const ACTIVITY_FILE: &str = "activity.jsonl";
+const CHAT_FEED_FILE: &str = "chat_feed.jsonl";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityRecord {
     pub cmd: String,
     pub cat: Category,
     pub exp: u64,
+    pub ts: DateTime<Utc>,
+}
+
+/// TUI に届ける一時メッセージ（ペットのセリフを別プロセスから渡す）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatFeedEntry {
+    pub text: String,
     pub ts: DateTime<Utc>,
 }
 
@@ -83,6 +91,53 @@ impl Storage {
 
     pub fn activity_file(&self) -> PathBuf {
         self.base_dir.join(ACTIVITY_FILE)
+    }
+
+    pub fn chat_feed_file(&self) -> PathBuf {
+        self.base_dir.join(CHAT_FEED_FILE)
+    }
+
+    /// chat_feed に1行 append。flock で複数プロセス間の競合を防ぐ。
+    pub fn append_chat_feed(&self, entry: &ChatFeedEntry) -> io::Result<()> {
+        let mut line = serde_json::to_string(entry)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        line.push('\n');
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.chat_feed_file())?;
+        let mut locked =
+            Flock::lock(file, FlockArg::LockExclusive).map_err(|e| io::Error::other(e.1))?;
+        locked.write_all(line.as_bytes())?;
+        Ok(())
+    }
+
+    /// chat_feed を全て読み込み、ファイルを空にする。
+    /// TUI が読み取り後に古いメッセージが溜まり続けないようにするため。
+    pub fn drain_chat_feed(&self) -> Vec<ChatFeedEntry> {
+        let path = self.chat_feed_file();
+        if !path.exists() {
+            return vec![];
+        }
+        let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) else {
+            return vec![];
+        };
+        let Ok(locked) = Flock::lock(file, FlockArg::LockExclusive) else {
+            return vec![];
+        };
+        let mut out = Vec::new();
+        let reader = io::BufReader::new(&*locked);
+        for line in reader.lines().map_while(Result::ok) {
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(entry) = serde_json::from_str::<ChatFeedEntry>(&line) {
+                out.push(entry);
+            }
+        }
+        let _ = locked.set_len(0);
+        out
     }
 
     pub fn append_activity(&self, record: &ActivityRecord) -> io::Result<()> {

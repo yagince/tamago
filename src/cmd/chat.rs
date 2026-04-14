@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::llm;
 use crate::llm::message::build_chat_prompt;
 use crate::pet::Category;
-use crate::storage::{ActivityRecord, Storage};
+use crate::storage::{ActivityRecord, ChatFeedEntry, Storage};
 
 /// チャット 1 回で入る経験値（ペットとの触れ合いボーナス）。
 const CHAT_EXP: u64 = 50;
@@ -32,6 +32,7 @@ pub async fn run(storage: &Storage, message: &str) {
         Some(msg) => {
             println!("{}: {msg}", pet.name);
             record_chat_activity(storage, message);
+            push_to_tui(storage, &msg);
         }
         None => {
             eprintln!(
@@ -40,6 +41,16 @@ pub async fn run(storage: &Storage, message: &str) {
             );
             std::process::exit(2);
         }
+    }
+}
+
+fn push_to_tui(storage: &Storage, text: &str) {
+    let entry = ChatFeedEntry {
+        text: text.to_string(),
+        ts: Utc::now(),
+    };
+    if let Err(e) = storage.append_chat_feed(&entry) {
+        tracing::warn!("chat_feed への書き込みに失敗: {e}");
     }
 }
 

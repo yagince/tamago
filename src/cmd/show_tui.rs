@@ -157,6 +157,13 @@ async fn run_tui(
                 }
             }
             _ = reload_interval.tick() => {
+                // 別プロセス (tamago chat) からのメッセージを取り込む
+                let chat_entries = storage.drain_chat_feed();
+                if let Some(last) = chat_entries.into_iter().next_back() {
+                    state.message = Some(last.text);
+                    state.message_timer = MESSAGE_DISPLAY_FRAMES;
+                }
+
                 // reload 前に直近 activity を保持
                 let peeked = storage.peek_latest_activities(5);
                 if !peeked.is_empty() {
