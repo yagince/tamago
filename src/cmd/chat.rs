@@ -24,7 +24,7 @@ pub async fn run(storage: &Storage, message: &str) {
     let (system, prompt) = build_chat_prompt(&pet, message);
 
     let reply = match generator.as_deref_mut() {
-        Some(g) => g.generate(&prompt, &system, 120).await,
+        Some(g) => g.generate(&prompt, &system, 50).await,
         None => None,
     };
 

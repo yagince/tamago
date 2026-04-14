@@ -22,6 +22,9 @@ use crate::llm::TextGenerator;
 use crate::pet::{Category, PetState, Stage};
 use crate::storage::{ActivityRecord, Storage};
 
+/// チャット 1 回で入る経験値（cmd::chat と揃える）。
+const TUI_CHAT_EXP: u64 = 50;
+
 const TICK_MS: u64 = 120;
 const MESSAGE_DISPLAY_FRAMES: u64 = 83; // ~10秒 (120ms/frame)
 
@@ -106,6 +109,7 @@ async fn run_tui(
 
     let (llm_tx, mut llm_rx) = tokio::sync::mpsc::channel::<String>(8);
     let mut llm_task: Option<tokio::task::JoinHandle<()>> = None;
+    let mut input_buffer = String::new();
 
     // reload 前に peek した直近 activity を保持（read_and_clear で消える前に）
     let mut recent_activities: Vec<ActivityRecord> = storage.peek_latest_activities(5);
@@ -152,7 +156,7 @@ async fn run_tui(
                     })?;
                 } else {
                     terminal.draw(|f| {
-                        aa_inner_size = draw(f, &pet, &current_aa, &state);
+                        aa_inner_size = draw(f, &pet, &current_aa, &state, &input_buffer);
                     })?;
                 }
             }
@@ -225,9 +229,44 @@ async fn run_tui(
                 if let Event::Key(key) = event
                     && key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => break,
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            KeyCode::Char('c' | 'd') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 break;
+                            }
+                            KeyCode::Esc => {
+                                if input_buffer.is_empty() {
+                                    break;
+                                }
+                                input_buffer.clear();
+                            }
+                            KeyCode::Enter => {
+                                let message = input_buffer.trim().to_string();
+                                input_buffer.clear();
+                                if !message.is_empty()
+                                    && let Some(task) = spawn_llm_chat(
+                                        &llm_engine,
+                                        &pet,
+                                        &message,
+                                        llm_tx.clone(),
+                                    ) {
+                                    // 既存 LLM タスクはキャンセルして上書き
+                                    if let Some(prev) = llm_task.take() {
+                                        prev.abort();
+                                    }
+                                    llm_task = Some(task);
+                                    // 即時フィードバック: ユーザー入力を自分の吹き出しに表示
+                                    state.message = Some(format!("> {message}"));
+                                    state.message_timer = MESSAGE_DISPLAY_FRAMES;
+                                    // exp 記録
+                                    record_chat_activity(storage, &message);
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                input_buffer.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                if input_buffer.chars().count() < 200 {
+                                    input_buffer.push(c);
+                                }
                             }
                             _ => {}
                         }
@@ -644,6 +683,35 @@ fn generate_message(activity: Option<&ActivityRecord>, pet: &PetState, frame: u6
     pick_message(&["...", "♪", "〜", "ふふっ", "いい天気だね"], frame)
 }
 
+fn spawn_llm_chat(
+    engine: &Option<Arc<Mutex<Box<dyn TextGenerator>>>>,
+    pet: &PetState,
+    message: &str,
+    tx: tokio::sync::mpsc::Sender<String>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let engine = engine.clone()?;
+    let (system, prompt) = crate::llm::message::build_chat_prompt(pet, message);
+    Some(tokio::spawn(async move {
+        let mut eng = engine.lock().await;
+        if let Some(msg) = eng.as_mut().generate(&prompt, &system, 50).await {
+            let _ = tx.send(msg).await;
+        }
+    }))
+}
+
+fn record_chat_activity(storage: &Storage, message: &str) {
+    let preview: String = message.chars().take(40).collect();
+    let record = ActivityRecord {
+        cmd: format!("chat: {preview}"),
+        cat: Category::Ai,
+        exp: TUI_CHAT_EXP,
+        ts: chrono::Utc::now(),
+    };
+    if let Err(e) = storage.append_activity(&record) {
+        tracing::warn!("TUI chat activity の記録に失敗: {e}");
+    }
+}
+
 fn spawn_llm_message(
     engine: &Option<Arc<Mutex<Box<dyn TextGenerator>>>>,
     pet: &PetState,
@@ -786,12 +854,22 @@ fn flip_line(line: &str) -> String {
 
 // ── Draw ─────────────────────────────────────────────────────
 
-fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) -> (u16, u16) {
+fn draw(
+    f: &mut Frame,
+    pet: &PetState,
+    aa_lines: &[String],
+    state: &AnimState,
+    input_buffer: &str,
+) -> (u16, u16) {
     let size = f.area();
 
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(10), Constraint::Length(9)])
+        .constraints([
+            Constraint::Min(10),
+            Constraint::Length(9),
+            Constraint::Length(3),
+        ])
         .split(size);
 
     let main = Layout::default()
@@ -806,7 +884,32 @@ fn draw(f: &mut Frame, pet: &PetState, aa_lines: &[String], state: &AnimState) -
     let aa_inner = draw_aa_area(f, main[0], aa_lines, state, pet);
     draw_status(f, main[2], pet);
     draw_category_bars(f, outer[1], pet);
+    draw_input(f, outer[2], input_buffer);
     aa_inner
+}
+
+fn draw_input(f: &mut Frame, area: Rect, buffer: &str) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .padding(Padding::horizontal(1))
+        .title(" 💬 Chat (Enter で送信 / Esc で終了) ");
+    let inner = block.inner(area);
+    let display = if buffer.is_empty() {
+        Paragraph::new("メッセージを入力…")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block)
+    } else {
+        Paragraph::new(buffer.to_string())
+            .style(Style::default().fg(Color::White))
+            .block(block)
+    };
+    f.render_widget(display, area);
+
+    // IME preedit が入力欄内に出るよう、カーソルを入力テキスト末尾に置く。
+    let cursor_x = inner.x + buffer.width() as u16;
+    let cursor_y = inner.y;
+    f.set_cursor_position((cursor_x.min(inner.right().saturating_sub(1)), cursor_y));
 }
 
 fn draw_aa_area(
