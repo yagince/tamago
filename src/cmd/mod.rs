@@ -1,3 +1,4 @@
+mod chat;
 mod hook;
 pub(crate) mod init;
 mod llm_config;
@@ -23,6 +24,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// ペットとチャットする（一言かけて返事をもらう）
+    Chat {
+        /// ペットに話しかけるメッセージ
+        message: String,
+    },
     /// 初期セットアップ（卵生成 + ガイド表示）
     Init,
     /// 命名・改名
@@ -78,6 +84,7 @@ pub enum Command {
 pub async fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show::run(&storage).await,
+        Some(Command::Chat { message }) => chat::run(&storage, &message).await,
         Some(Command::Init) => init::run(&storage).await,
         Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai).await,
         Some(Command::Show { message_interval }) => {
