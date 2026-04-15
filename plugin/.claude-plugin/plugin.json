@@ -1,0 +1,11 @@
+{
+  "name": "tamago",
+  "version": "0.6.0",
+  "description": "Terminal pet integration for Claude Code (companion to the tamago CLI)",
+  "author": {
+    "name": "Natsuki Yagi"
+  },
+  "repository": "https://github.com/yagince/tamago",
+  "license": "MIT",
+  "keywords": ["tamago", "pet", "statusline", "terminal", "claude-code"]
+}

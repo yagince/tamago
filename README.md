@@ -60,6 +60,27 @@ tamago hook bash >> ~/.bashrc
 tamago hook statusline >> ~/.claude/statusline-command.sh
 ```
 
+### Claude Code plugin（任意）
+
+Claude Code 内から直接インストールできる plugin 版もあります。`/plugin` コマンドから:
+
+```
+/plugin marketplace add yagince/tamago
+/plugin install tamago@yagince
+/reload-plugins
+```
+
+**前提**: `tamago` バイナリが `$PATH` にあること（`brew install tamago` 等でインストール済み）。plugin はバイナリを同梱せず、hook 経由で既存の `tamago` コマンドを呼び出すだけの薄いラッパーです。
+
+**更新**: サードパーティ marketplace はデフォルトで auto-update off。新 version が出たら以下で更新:
+
+```
+/plugin marketplace update yagince
+/reload-plugins
+```
+
+または `/plugin` の Marketplaces タブから該当 marketplace の auto-update を on にしておけば自動化されます。バイナリ本体の更新は別途 `brew upgrade tamago` が必要です（2 層構造）。
+
 ## コマンドリファレンス
 
 ### 基本

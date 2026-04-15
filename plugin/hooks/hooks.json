@@ -1,0 +1,17 @@
+{
+  "description": "tamago lifecycle hooks (Phase A: SessionStart only)",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v tamago >/dev/null 2>&1 && tamago status || exit 0'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

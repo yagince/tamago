@@ -446,3 +446,176 @@ Claude Code の statusline は行頭の空白（通常スペース・NBSP 含む
 
 現状は `cargo install --path .` でローカルインストール。
 Homebrew 対応は未着手。
+
+---
+
+## 機能追加案: chat にツール使用 & セッション維持 (plan)
+
+### Context
+現在 `tamago chat` と TUI の chat 入力は Claude CLI を `--allowedTools ""` / `--no-session-persistence` で呼び出し、`20文字以内` + 50 tokens に制限している。結果、内容が希薄で毎回ゼロから会話が始まる。
+
+改善目標:
+- Claude CLI backend: WebSearch ツールを 1つだけ許可、**ペット毎に 1 つ**のセッションを維持して多ターン会話を成立させる
+- 返答長: 100 文字 / 150 tokens（短め）
+- Local LLM backend: 現状維持（candle ベースは tool-use / session の実装なし。ドキュメントで明記）
+- name / personality / reaction 生成は現状維持（stateless・無 tools のまま）
+
+### Approach
+
+#### 1. 依存追加
+`Cargo.toml` に `uuid = { version = "1", features = ["v4", "serde"] }` を追加（Claude CLI の `--session-id` が UUID 必須）。
+
+#### 2. PetState にセッション ID を追加
+`src/pet/mod.rs` の `PetState` に `#[serde(default)] chat_session_id: Option<Uuid>` を追加。既存 pet.json は `null` として復元されるので後方互換 OK。
+
+#### 3. TextGenerator trait を chat 対応に拡張
+`src/llm/mod.rs` に新メソッド:
+```rust
+async fn generate_chat(
+    &mut self,
+    prompt: &str,
+    system: &str,
+    max_tokens: usize,
+    session_id: Option<&Uuid>,
+) -> Option<String>;
+```
+default impl は `generate` をそのまま呼ぶ（Local / None 用）。ClaudeCli のみ override。
+
+#### 4. ClaudeCli の chat 経路
+`src/llm/claude.rs`:
+- 既存 `execute` はそのまま（名前 / 性格 / reaction 用 stateless）
+- 新規 `execute_chat(prompt, system, max_chars, session_id)`:
+  - `--no-session-persistence` を**外す**
+  - `--session-id <uuid>` を追加
+  - `--allowedTools "WebSearch"` を追加
+  - timeout 60s（検索の往復分）
+  - `--disable-slash-commands`, `--strict-mcp-config`, `--setting-sources local`, `--effort low` はそのまま維持
+- `impl TextGenerator for ClaudeCli` に `generate_chat` override を実装
+
+#### 5. プロンプト調整
+`src/llm/message.rs` の `build_chat_prompt`:
+- 「20文字以内で」→「**100文字以内**で」
+- 「必要に応じて WebSearch を使って事実を確認してよい。結果は要点だけ短くまとめること。」を追加
+- anti-injection 節は維持
+
+#### 6. 呼び出し側
+`src/cmd/chat.rs`:
+- pet 読み込み後、`chat_session_id` が None なら `Uuid::new_v4()` を生成して pet に save
+- `generator.generate_chat(..., pet.chat_session_id.as_ref())` を呼ぶ
+- token 上限 50 → 150
+
+`src/cmd/show_tui.rs`:
+- `spawn_llm_chat` を同様に修正（session_id を clone して spawn に渡す）
+- session_id の新規発行と save はメインスレッド側で行い workers に渡すだけ
+- token 上限 50 → 150
+
+#### 7. reset 配慮
+`src/cmd/reset.rs` は設定ディレクトリごと削除するので pet.json の session_id も自動で消える。Claude CLI 側の session ファイルはユーザーのホーム配下に残るが、tamago からは参照されなくなる（放置で良い）。
+
+### Files Modified
+- `Cargo.toml`
+- `src/pet/mod.rs`
+- `src/llm/mod.rs` (trait 拡張)
+- `src/llm/claude.rs` (chat 経路追加)
+- `src/llm/message.rs` (プロンプト文言)
+- `src/cmd/chat.rs` (session id 生成 & 保存)
+- `src/cmd/show_tui.rs` (同上 + spawn_llm_chat)
+- `README.md` (local LLM は chat で tool/session 非対応の旨を追記)
+
+### Verification
+1. `cargo build --features metal && cargo test && cargo clippy --all-targets --features metal` 全 green
+2. 実機テスト（要 Claude CLI backend）:
+   - `tamago chat "今日の東京の天気"` → 検索込みの具体的な返答
+   - `tamago chat "じゃあ湿度は？"` → **前ターンを参照**した返答なら session 有効確認
+   - pet.json に `chat_session_id` が保存されていることを確認
+3. `tamago reset` 後、新しい session_id で初期化される
+4. `tamago llm local` に切り替え → chat が従来通り（短い、session なし）動作
+5. TUI (`tamago show`) の入力欄からも同じ挙動
+
+### Open Notes
+- WebSearch は Claude のプラン/契約によって使えない可能性あり。呼び出しが失敗したら既存のフォールバックで None → ペット「忙しい」表示になるので致命的ではない
+- Claude CLI の session ファイル自体の削除は範囲外（ユーザー側の管理）
+- 既存の反応メッセージ生成（`build_message_prompt`）は stateless のまま残す。"コマンド履歴に対する即時リアクション" なので記憶不要
+
+---
+
+## 機能追加案: Claude Code hooks で session transcript を活用 (plan)
+
+### Context
+現在 tamago は Claude Code からのシグナルとして `--claude-turn` / `output_tokens` 累積値しか見ておらず、会話の中身を理解していない。claude-mem は Claude Code の lifecycle hooks に登録して `transcript_path` 経由で会話 JSONL を読み、DB に保存している。同じ仕組みで tamago もセッション内容を読めば、より精緻な経験値計算・カテゴリ判定・進化分岐が可能になる。
+
+### 前提: Claude Code hooks の仕様
+`~/.claude/settings.json` の `hooks` に外部コマンドを登録すると、Claude Code が各ライフサイクルイベントで起動し、stdin に JSON を渡す。
+
+| Hook | データ | transcript |
+|---|---|---|
+| SessionStart | session_id, cwd, source | ❌ |
+| UserPromptSubmit | session_id, prompt | ❌ |
+| PostToolUse | tool_name, tool_input, tool_response | ❌ |
+| **Stop** | session_id, **transcript_path** | ✅ JSONL 全履歴 |
+| **SessionEnd** | session_id, **transcript_path**, reason | ✅ |
+
+`Stop` / `SessionEnd` で渡される `transcript_path` は JSONL 形式の会話履歴ファイル。
+
+### Approach
+
+#### 1. インストール補助コマンド
+`src/cmd/hook.rs` に `claude-code` variant を追加（既存の `zsh` / `bash` / `statusline` と並ぶ）:
+- `tamago hook claude-code` → `~/.claude/settings.json` に追記するための hook 設定 JSON スニペット or そのまま registerするコマンド
+- 出力例:
+  ```json
+  {
+    "hooks": {
+      "Stop": [{"command": "tamago claude-hook --event stop"}],
+      "PostToolUse": [{"command": "tamago claude-hook --event post-tool-use"}]
+    }
+  }
+  ```
+
+#### 2. claude-hook 内部コマンド（hidden）
+`src/cmd/claude_hook.rs` を新設。`#[command(hide = true)]`:
+- stdin から JSON を読む
+- `--event` で分岐:
+  - `post-tool-use`: 軽量処理。tool_name / tool_input から「どんな作業か」を判定 → ActivityRecord を1つ追記（exp は小さめ）
+  - `stop`: `transcript_path` を読み込み → セッション全体をサマリ集計
+    - 総ターン数
+    - 使った tool の種類と回数（Bash, Read, Edit, WebSearch, WebFetch, Task, etc）
+    - user メッセージ数（実作業量の近似）
+  - `session-end`: cleanup / 最終集計
+
+#### 3. ペット成長への反映
+- 既存の `Category` (Git/Ai/Dev/Infra/Editor/Basic/Other) を拡張 or 新カテゴリを足す
+  - 案: tool 種別 → カテゴリ マップ
+    - `Edit`, `Write` → Dev
+    - `Bash` → Basic/Dev（コマンド内容次第）
+    - `WebSearch`, `WebFetch` → Ai（知識欲）
+    - `Task` (subagent) → Ai（高度）
+    - `Read`, `Grep`, `Glob` → Editor（コード読み）
+- 1 会話セッションで使われた tool の分布を見て、既存の archetype 分岐をよりリッチに判定
+
+#### 4. 実装方針・規模コントロール
+- 最初は **`Stop` hook だけ** 実装して `transcript_path` を読み、サマリ activity を1本記録するところから始める
+- `PostToolUse` は毎 tool 実行で呼ばれるため実行頻度が高い → II 期で慎重に実装（スロットリング必須）
+- 既存の `--claude-turn` / `output_tokens` 経路は **残す**（hook 未登録ユーザーでも動作）
+
+### Files Modified (予想)
+- `Cargo.toml` (serde_json は既にあるので依存追加なし)
+- `src/cmd/hook.rs` — `claude-code` variant 追加
+- `src/cmd/mod.rs` — 新サブコマンド `claude-hook` 追加
+- `src/cmd/claude_hook.rs` (新規) — stdin 読み取り & transcript 処理
+- `src/tracker/` — tool → Category マッピング追加（または scoring 拡張）
+- `src/pet/mod.rs` — archetype 判定ロジックに tool 分布を加味（将来）
+- `spec.md` / `README.md` — ドキュメント更新
+
+### Verification
+1. `tamago hook claude-code >> ~/.claude/settings.json` で登録
+2. Claude Code でセッションを終了（Stop）→ `activity.jsonl` に新エントリが追加されることを確認
+3. `tamago.log` に hook 起動ログ
+4. 集計が活動に反映されて pet 成長することを確認
+5. hook 未登録ユーザーの挙動は変わらない（互換性）
+
+### Open Notes
+- `transcript_path` の JSONL フォーマットはバージョン依存。最初は主要フィールドだけ緩くパースする
+- `PostToolUse` を有効化する場合、スロットリング（例: 10 秒に 1 回）が必須。毎 tool 実行で DB 書き込みは重い
+- hook の失敗は Claude Code の本体動作を阻害すべきでない → `tamago claude-hook` は常に exit 0 で返し、失敗はログだけ残す
+- プライバシー: 会話内容をそのまま永続化はしない。**集計値だけ** activity に書く
