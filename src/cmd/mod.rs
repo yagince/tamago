@@ -1,4 +1,5 @@
 mod chat;
+mod claude_hook;
 mod hook;
 pub(crate) mod init;
 mod llm_config;
@@ -64,6 +65,13 @@ pub enum Command {
         #[command(subcommand)]
         command: llm_config::LlmCommand,
     },
+    /// Claude Code plugin hook から呼ばれる（内部用）
+    #[command(hide = true)]
+    ClaudeHook {
+        /// 発火したイベント名 (stop, session-end, session-start 等)
+        #[arg(long)]
+        event: String,
+    },
     /// フックから呼ばれる（内部用）
     #[command(hide = true)]
     Tick {
@@ -85,6 +93,7 @@ pub async fn run(cli: Cli, storage: Storage) {
     match cli.command {
         None => show::run(&storage).await,
         Some(Command::Chat { message }) => chat::run(&storage, &message).await,
+        Some(Command::ClaudeHook { event }) => claude_hook::run(&storage, &event).await,
         Some(Command::Init) => init::run(&storage).await,
         Some(Command::Name { name, ai }) => name::run(&storage, name.as_deref(), ai).await,
         Some(Command::Show { message_interval }) => {

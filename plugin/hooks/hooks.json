@@ -1,5 +1,5 @@
 {
-  "description": "tamago lifecycle hooks (Phase A: SessionStart only)",
+  "description": "tamago lifecycle hooks",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,28 @@
             "type": "command",
             "command": "sh -c 'command -v tamago >/dev/null 2>&1 && tamago status || exit 0'",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v tamago >/dev/null 2>&1 && tamago claude-hook --event stop || exit 0'",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v tamago >/dev/null 2>&1 && tamago claude-hook --event session-end || exit 0'",
+            "timeout": 30
           }
         ]
       }
