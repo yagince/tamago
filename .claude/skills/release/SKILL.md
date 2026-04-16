@@ -36,6 +36,24 @@ git tag v<version>
 git push origin main --tags
 ```
 
+## Step 3.5: Sync Claude Code plugin version
+
+`cargo release` は Cargo.toml しか更新しないので、plugin の version を手動で合わせてコミットする。
+
+```bash
+VERSION=<new_version>
+# marketplace.json
+sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" .claude-plugin/marketplace.json
+# plugin.json
+sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" plugin/.claude-plugin/plugin.json
+
+git add .claude-plugin/marketplace.json plugin/.claude-plugin/plugin.json
+git commit -m "chore: sync plugin version to $VERSION"
+git push origin main
+```
+
+Linux (GNU sed) なら `sed -i` だけで OK（`''` は外す）。
+
 ## Step 4: Wait for CI
 
 Poll until the release workflow completes:
