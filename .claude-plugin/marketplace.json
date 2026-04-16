@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "tamago",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "source": "./plugin",
       "description": "Terminal pet that grows with your shell and Claude Code activity"
     }
