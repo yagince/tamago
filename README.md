@@ -80,7 +80,7 @@ Claude Code 内から直接インストールできる plugin 版もあります
 /reload-plugins
 ```
 
-または `/plugin` の Marketplaces タブから該当 marketplace の auto-update を on にしておけば自動化されます。バイナリ本体の更新は別途 `brew upgrade tamago` が必要です（2 層構造）。
+または `/plugin` の Marketplaces タブから該当 marketplace の auto-update を on にしておけば自動化されます。バイナリ本体の更新は別途 `brew upgrade tamago` または `tamago update` が必要です（2 層構造）。
 
 ## コマンドリファレンス
 
