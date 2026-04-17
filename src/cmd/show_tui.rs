@@ -125,10 +125,19 @@ async fn run_tui(
 
     let mut aa_inner_size = (40u16, 16u16);
 
-    // 初回メッセージ生成
+    // 起動時にバックグラウンドで update チェック
+    crate::updater::schedule_check(storage.base_dir().clone());
+
+    // 初回メッセージ生成（pending update があれば優先）
     {
-        let activity = recent_activities.first();
-        let msg = generate_message(activity, &pet, state.frame);
+        let current = env!("CARGO_PKG_VERSION");
+        let msg = if let Some(latest) = crate::updater::pending_update(storage.base_dir(), current)
+        {
+            format!("✨ v{latest} があるよ！ `tamago update`")
+        } else {
+            let activity = recent_activities.first();
+            generate_message(activity, &pet, state.frame)
+        };
         state.message = Some(msg);
         state.message_timer = MESSAGE_DISPLAY_FRAMES;
 

@@ -29,6 +29,16 @@ pub async fn run(storage: &Storage) {
         print_evolution(&pet);
     }
     print_status(&pet);
+    print_update_notice(storage);
+}
+
+fn print_update_notice(storage: &Storage) {
+    let current = env!("CARGO_PKG_VERSION");
+    if let Some(latest) = crate::updater::pending_update(storage.base_dir(), current) {
+        println!(
+            "\n  \x1b[96m✨ 新バージョン v{latest} があります\x1b[0m  →  \x1b[90m`tamago update`\x1b[0m"
+        );
+    }
 }
 
 fn print_evolution(pet: &crate::pet::PetState) {

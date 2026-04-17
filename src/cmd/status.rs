@@ -13,6 +13,9 @@ const CELEBRATION_DURATION_SECS: i64 = 10;
 const EMPTY: &str = "\x1b[30m\u{2588}\x1b[0m";
 
 pub async fn run(storage: &Storage) {
+    // 背後で最新バージョンをチェック（24時間に1回まで、ネットワーク失敗は静かに無視）
+    crate::updater::schedule_check(storage.base_dir().clone());
+
     let mut pet = match storage.load_pet() {
         Ok(pet) => pet,
         Err(_) => return,

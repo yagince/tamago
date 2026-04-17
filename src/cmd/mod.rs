@@ -87,6 +87,9 @@ pub enum Command {
     },
     /// 最新バージョンに更新
     Update,
+    /// 最新バージョンをバックグラウンドでチェック（内部用）
+    #[command(name = "__update-check", hide = true)]
+    UpdateCheck,
 }
 
 pub async fn run(cli: Cli, storage: Storage) {
@@ -110,5 +113,8 @@ pub async fn run(cli: Cli, storage: Storage) {
             output_tokens,
         }) => tick::run(&storage, cmd.as_deref(), claude_turn, output_tokens),
         Some(Command::Update) => update::run().await,
+        Some(Command::UpdateCheck) => {
+            crate::updater::run_background_check(storage.base_dir()).await
+        }
     }
 }

@@ -7,6 +7,7 @@ mod logger;
 mod pet;
 mod storage;
 mod tracker;
+mod updater;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
