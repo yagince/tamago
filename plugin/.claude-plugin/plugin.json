@@ -1,6 +1,6 @@
 {
   "name": "tamago",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Terminal pet integration for Claude Code (companion to the tamago CLI)",
   "author": {
     "name": "Natsuki Yagi"
