@@ -597,7 +597,9 @@ impl AnimState {
             base_lines.to_vec()
         };
 
-        if !self.facing_right {
+        // AA は初期状態で左向きに描かれているため、
+        // 右に移動するとき（facing_right=true）に水平反転する。
+        if self.facing_right {
             // 全行を同じ幅にパディングしてから反転（形が崩れないように）
             let max_w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
             lines = lines
