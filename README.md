@@ -137,7 +137,7 @@ TUI (`tamago show`) の最下部には常時チャット入力欄があります
 |----------|------|
 | `tamago llm show` | 現在の LLM バックエンドを表示 |
 | `tamago llm claude` | Claude CLI に切り替え（デフォルト、要 Claude Code） |
-| `tamago llm local` | ローカル LLM (candle + Qwen2.5) に切り替え（初回はモデル DL） |
+| `tamago llm local` | ローカル LLM (candle + TinySwallow-1.5B) に切り替え（初回はモデル DL、約 1.1GB） |
 | `tamago llm none` | LLM を無効化（テンプレフォールバックのみ） |
 | `tamago llm device` | 推論に使うデバイス (GPU/CPU) を表示 |
 

@@ -13,9 +13,11 @@ use tokenizers::Tokenizer;
 
 use super::TextGenerator;
 
-const GGUF_REPO: &str = "Qwen/Qwen2.5-1.5B-Instruct-GGUF";
-const GGUF_FILE: &str = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
-const TOKENIZER_REPO: &str = "Qwen/Qwen2.5-1.5B-Instruct";
+// 日本語特化の蒸留モデル (Qwen2.5-1.5B 派生、Qwen2 アーキなので quantized_qwen2 で動く)。
+// 公式 GGUF には Q4_K_M が無いため Q5_K_M を使用 (1.13GB、量子化が浅い分やや高品質)。
+const GGUF_REPO: &str = "SakanaAI/TinySwallow-1.5B-Instruct-GGUF";
+const GGUF_FILE: &str = "tinyswallow-1.5b-instruct-q5_k_m.gguf";
+const TOKENIZER_REPO: &str = "SakanaAI/TinySwallow-1.5B-Instruct";
 
 const TEMPERATURE: f64 = 0.7;
 const TOP_P: f64 = 0.9;
