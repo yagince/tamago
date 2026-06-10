@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::pet::Category;
 use crate::storage::{ActivityRecord, Storage};
+use crate::tracker::score;
 
 pub async fn run(storage: &Storage, event: &str) {
     if let Err(e) = handle(storage, event) {
@@ -65,6 +66,10 @@ struct TranscriptLine {
     #[serde(rename = "type")]
     kind: Option<String>,
     message: Option<TranscriptMessage>,
+    #[serde(rename = "isMeta")]
+    is_meta: bool,
+    #[serde(rename = "isSidechain")]
+    is_sidechain: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -76,7 +81,9 @@ struct TranscriptMessage {
 #[derive(Default)]
 struct Summary {
     user_msgs: u64,
-    tool_counts: std::collections::HashMap<String, u64>,
+    tool_results: u64,
+    /// (カテゴリ, ツール名) → 呼び出し回数。Bash はコマンド内容でカテゴリが分かれる
+    tool_counts: std::collections::HashMap<(Category, String), u64>,
 }
 
 fn cursor_path(storage: &Storage, session_id: &str) -> std::path::PathBuf {
@@ -130,7 +137,39 @@ fn ingest_transcript_incremental(
             continue;
         };
         match entry.kind.as_deref() {
-            Some("user") => summary.user_msgs += 1,
+            Some("user") => {
+                let Some(content) = entry.message.and_then(|m| m.content) else {
+                    continue;
+                };
+                match &content {
+                    // content が文字列 = 人間がタイプしたメッセージ
+                    serde_json::Value::String(_) => {
+                        if !entry.is_meta && !entry.is_sidechain {
+                            summary.user_msgs += 1;
+                        }
+                    }
+                    serde_json::Value::Array(items) => {
+                        // tool_result を含む user 行はツール実行結果であって人間の発言ではない
+                        let tool_results = items
+                            .iter()
+                            .filter(|i| {
+                                i.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+                            })
+                            .count() as u64;
+                        if tool_results > 0 {
+                            summary.tool_results += tool_results;
+                        } else if !entry.is_meta
+                            && !entry.is_sidechain
+                            && items
+                                .iter()
+                                .any(|i| i.get("type").and_then(|v| v.as_str()) == Some("text"))
+                        {
+                            summary.user_msgs += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Some("assistant") => {
                 if let Some(msg) = entry.message
                     && let Some(content) = msg.content.as_ref()
@@ -140,7 +179,11 @@ fn ingest_transcript_incremental(
                         if item.get("type").and_then(|v| v.as_str()) == Some("tool_use")
                             && let Some(name) = item.get("name").and_then(|v| v.as_str())
                         {
-                            *summary.tool_counts.entry(name.to_string()).or_insert(0) += 1;
+                            let cat = tool_use_category(name, item.get("input"));
+                            *summary
+                                .tool_counts
+                                .entry((cat, name.to_string()))
+                                .or_insert(0) += 1;
                         }
                     }
                 }
@@ -157,8 +200,9 @@ fn ingest_transcript_incremental(
 fn record_summary(storage: &Storage, summary: &Summary) {
     let total_tools: u64 = summary.tool_counts.values().sum();
     tracing::info!(
-        "claude transcript 集計: user_msgs={}, tool_calls={}",
+        "claude transcript 集計: user_msgs={}, tool_results={}, tool_calls={}",
         summary.user_msgs,
+        summary.tool_results,
         total_tools
     );
 
@@ -175,12 +219,24 @@ fn record_summary(storage: &Storage, summary: &Summary) {
         );
     }
 
-    // tool 使用を Category ごとに集計
+    // tool_result: AI が働いて返した結果。1件 = 1 exp (Ai カテゴリ)
+    if summary.tool_results > 0 {
+        append(
+            storage,
+            ActivityRecord {
+                cmd: format!("claude-session: {} tool results", summary.tool_results),
+                cat: Category::Ai,
+                exp: summary.tool_results,
+                ts: Utc::now(),
+            },
+        );
+    }
+
+    // tool 使用を Category ごとに集計（1回 = 2 exp）
     let mut by_cat: std::collections::HashMap<Category, (u64, Vec<String>)> =
         std::collections::HashMap::new();
-    for (name, count) in &summary.tool_counts {
-        let cat = tool_category(name);
-        let entry = by_cat.entry(cat).or_default();
+    for ((cat, name), count) in &summary.tool_counts {
+        let entry = by_cat.entry(*cat).or_default();
         entry.0 += count;
         entry.1.push(format!("{name}×{count}"));
     }
@@ -203,12 +259,25 @@ fn append(storage: &Storage, record: ActivityRecord) {
     }
 }
 
+/// tool_use 1件のカテゴリを決める。
+/// Bash は実行コマンドの中身で分類（シェル直打ちと同じ基準）。
+fn tool_use_category(name: &str, input: Option<&serde_json::Value>) -> Category {
+    if name == "Bash" {
+        return input
+            .and_then(|i| i.get("command"))
+            .and_then(|v| v.as_str())
+            .map(|cmd| score(cmd).category)
+            .unwrap_or(Category::Basic);
+    }
+    tool_category(name)
+}
+
 fn tool_category(name: &str) -> Category {
     match name {
         "Edit" | "Write" | "NotebookEdit" => Category::Dev,
         "Read" | "Grep" | "Glob" => Category::Editor,
-        "Bash" => Category::Basic,
-        "WebSearch" | "WebFetch" | "Agent" | "Task" | "ToolSearch" => Category::Ai,
+        "WebSearch" | "WebFetch" | "Agent" | "Task" | "ToolSearch" | "Skill"
+        | "AskUserQuestion" => Category::Ai,
         _ => Category::Other,
     }
 }
@@ -241,9 +310,33 @@ mod tests {
     fn tool_category_mapping() {
         assert_eq!(tool_category("Edit"), Category::Dev);
         assert_eq!(tool_category("Read"), Category::Editor);
-        assert_eq!(tool_category("Bash"), Category::Basic);
         assert_eq!(tool_category("WebSearch"), Category::Ai);
+        assert_eq!(tool_category("Skill"), Category::Ai);
+        assert_eq!(tool_category("AskUserQuestion"), Category::Ai);
+        assert_eq!(tool_category("TaskUpdate"), Category::Other);
+        assert_eq!(tool_category("mcp__docbase__getPost"), Category::Other);
         assert_eq!(tool_category("UnknownTool"), Category::Other);
+    }
+
+    #[test]
+    fn bash_tool_classified_by_command() {
+        let input = serde_json::json!({"command": "git commit -m fix"});
+        assert_eq!(tool_use_category("Bash", Some(&input)), Category::Git);
+
+        let input = serde_json::json!({"command": "cargo build"});
+        assert_eq!(tool_use_category("Bash", Some(&input)), Category::Dev);
+
+        let input = serde_json::json!({"command": "docker ps"});
+        assert_eq!(tool_use_category("Bash", Some(&input)), Category::Infra);
+
+        let input = serde_json::json!({"command": "ls -la"});
+        assert_eq!(tool_use_category("Bash", Some(&input)), Category::Basic);
+
+        let input = serde_json::json!({"command": "htop"});
+        assert_eq!(tool_use_category("Bash", Some(&input)), Category::Other);
+
+        // command が無い場合は Basic 扱い
+        assert_eq!(tool_use_category("Bash", None), Category::Basic);
     }
 
     fn write_transcript(dir: &TempDir, content: &str) -> std::path::PathBuf {
@@ -256,15 +349,22 @@ mod tests {
     fn ingest_counts_user_and_tool_use() {
         let (dir, storage) = setup();
         let content = r#"{"type":"user","message":{"content":"hi"}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git commit -m x"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit"},{"type":"tool_use","name":"Read"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"ok"},{"type":"tool_result","tool_use_id":"t3","content":"ok"}]}}
 {"type":"user","message":{"content":"bye"}}
 "#;
         let path = write_transcript(&dir, content);
         ingest_transcript_incremental(&storage, "sess1", path.to_str().unwrap()).unwrap();
 
         let activities = storage.read_and_clear_activities().unwrap();
-        assert_eq!(activities.len(), 4, "basic(user)+basic(Bash)+dev+editor");
+        assert_eq!(
+            activities.len(),
+            5,
+            "basic(user)+ai(tool_results)+git(Bash)+dev+editor"
+        );
+        // user メッセージは "hi"/"bye" の2件のみ（tool_result 行は数えない）
         assert_eq!(
             activities
                 .iter()
@@ -272,6 +372,24 @@ mod tests {
                 .unwrap()
                 .exp,
             6
+        );
+        // tool_result 3件 → Ai に 3 exp
+        assert_eq!(
+            activities
+                .iter()
+                .find(|a| a.cmd.contains("tool results"))
+                .unwrap()
+                .exp,
+            3
+        );
+        // Bash(git commit) → Git カテゴリ
+        assert_eq!(
+            activities
+                .iter()
+                .find(|a| a.cat == Category::Git)
+                .unwrap()
+                .exp,
+            2
         );
         assert_eq!(
             activities
@@ -281,6 +399,48 @@ mod tests {
                 .exp,
             2
         );
+    }
+
+    #[test]
+    fn tool_result_lines_count_as_ai_not_user() {
+        let (dir, storage) = setup();
+        let content = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
+"#;
+        let path = write_transcript(&dir, content);
+        ingest_transcript_incremental(&storage, "sess-tr", path.to_str().unwrap()).unwrap();
+
+        let activities = storage.read_and_clear_activities().unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].cat, Category::Ai);
+        assert_eq!(activities[0].exp, 1);
+        assert!(!activities[0].cmd.contains("user msgs"));
+    }
+
+    #[test]
+    fn text_array_content_counts_as_user_msg() {
+        let (dir, storage) = setup();
+        let content = r#"{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}
+"#;
+        let path = write_transcript(&dir, content);
+        ingest_transcript_incremental(&storage, "sess-txt", path.to_str().unwrap()).unwrap();
+
+        let activities = storage.read_and_clear_activities().unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].cat, Category::Basic);
+        assert_eq!(activities[0].exp, 3);
+    }
+
+    #[test]
+    fn meta_and_sidechain_user_lines_skipped() {
+        let (dir, storage) = setup();
+        let content = r#"{"type":"user","isMeta":true,"message":{"content":"local command output"}}
+{"type":"user","isSidechain":true,"message":{"content":"subagent prompt"}}
+"#;
+        let path = write_transcript(&dir, content);
+        ingest_transcript_incremental(&storage, "sess-meta", path.to_str().unwrap()).unwrap();
+
+        let activities = storage.read_and_clear_activities().unwrap();
+        assert!(activities.is_empty(), "meta/sidechain 行は記録しない");
     }
 
     #[test]

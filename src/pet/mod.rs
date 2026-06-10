@@ -154,12 +154,10 @@ impl PetState {
 
         let base = self.stage.exp_threshold();
         let range = self.stage.next_threshold().saturating_sub(base);
-        let within = if range == 0 {
-            stage_levels
-        } else {
-            let progress = self.exp.saturating_sub(base);
-            (progress * stage_levels / range).min(stage_levels - 1) + 1
-        };
+        let progress = self.exp.saturating_sub(base);
+        let within = (progress * stage_levels)
+            .checked_div(range)
+            .map_or(stage_levels, |v| v.min(stage_levels - 1) + 1);
         stage_offset + within
     }
 
