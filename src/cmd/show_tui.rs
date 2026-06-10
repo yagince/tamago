@@ -272,10 +272,8 @@ async fn run_tui(
                             KeyCode::Backspace => {
                                 input_buffer.pop();
                             }
-                            KeyCode::Char(c) => {
-                                if input_buffer.chars().count() < 200 {
-                                    input_buffer.push(c);
-                                }
+                            KeyCode::Char(c) if input_buffer.chars().count() < 200 => {
+                                input_buffer.push(c);
                             }
                             _ => {}
                         }
